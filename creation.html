@@ -1,0 +1,2138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>create music — music.declan.fun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="daw-page">
+
+  <div class="daw-top">
+    <a class="back-link" href="index.html">&larr; back</a>
+    <span class="brand">music.declan.fun</span>
+    <div class="daw-top-actions">
+      <button class="daw-icon-btn" id="autoCreateBtn" title="auto create a song from your open tracks" aria-label="auto create">&#10024;</button>
+      <button class="daw-icon-btn" id="settingsBtn" title="settings" aria-label="settings">&#9881;</button>
+      <button class="daw-icon-btn" id="fxBtn" title="effects" aria-label="effects">fx</button>
+    </div>
+  </div>
+
+  <div class="daw-body">
+
+    <aside class="track-list" id="trackList">
+      <!-- track rows injected by js -->
+    </aside>
+
+    <section class="editor-area">
+      <div class="editor-head">
+        <div class="editor-title" id="editorTitle">piano</div>
+        <div class="editor-controls" id="editorControls"></div>
+      </div>
+      <div class="editor-grid-wrap" id="editorGridWrap"></div>
+    </section>
+
+  </div>
+
+  <div class="daw-transport">
+    <button class="transport-btn" id="playBtn" aria-label="play">&#9654;</button>
+    <button class="transport-btn" id="stopBtn" aria-label="stop">&#9632;</button>
+    <span class="transport-info" id="transportInfo">96 bpm &middot; 4 bars</span>
+  </div>
+
+</div>
+
+<!-- add track modal -->
+<div class="modal-overlay" id="addTrackModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><span>add track &mdash; choose an instrument</span><button class="modal-close" data-close="addTrackModal">&times;</button></div>
+    <div class="instrument-grid" id="instrumentGrid"></div>
+  </div>
+</div>
+
+<!-- settings modal -->
+<div class="modal-overlay" id="settingsModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><span>settings</span><button class="modal-close" data-close="settingsModal">&times;</button></div>
+    <div class="modal-body">
+      <div class="ctrl-row">
+        <label>tempo</label>
+        <input type="range" id="bpmRange" min="60" max="200" step="1" value="96">
+        <span class="ctrl-val" id="bpmVal">96 bpm</span>
+      </div>
+      <div class="ctrl-row">
+        <label>bars</label>
+        <select id="barsSelect">
+          <option value="2">2</option>
+          <option value="4" selected>4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>swing</label>
+        <input type="range" id="swingRange" min="0" max="60" step="1" value="0">
+        <span class="ctrl-val" id="swingVal">0%</span>
+      </div>
+      <div class="ctrl-row">
+        <label>volume</label>
+        <input type="range" id="masterVolRange" min="0" max="100" step="1" value="90">
+        <span class="ctrl-val" id="masterVolVal">90%</span>
+      </div>
+      <div class="ctrl-row">
+        <label>&nbsp;</label>
+        <label class="checkbox-label"><input type="checkbox" id="loopToggle" checked> loop</label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- effects modal -->
+<div class="modal-overlay" id="fxModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><span>master effects</span><button class="modal-close" data-close="fxModal">&times;</button></div>
+    <div class="modal-body">
+      <div class="fx-list" id="fxList"></div>
+      <div class="mixer-foot" style="border-top:none;padding:0;">these run on every track on the way out.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+
+  /* ===================== instrument definitions ===================== */
+
+  var INSTRUMENTS = {
+    grand_piano:    { label: "Grand Piano",     icon: "\uD83C\uDFB9", kind: "melodic", baseOctave: 4, voice: "piano", humanize: true },
+    electric_piano: { label: "Electric Piano",  icon: "\uD83C\uDFB9", kind: "melodic", baseOctave: 4, voice: "epiano" },
+    acoustic_guitar:{ label: "Acoustic Guitar", icon: "\uD83C\uDFB8", kind: "melodic", baseOctave: 3, voice: "acousticGuitar", humanize: true },
+    electric_guitar:{ label: "Electric Guitar", icon: "\uD83C\uDFB8", kind: "melodic", baseOctave: 3, voice: "electricGuitar", humanize: true },
+    bass:           { label: "Bass",            icon: "\uD83C\uDFB8", kind: "melodic", baseOctave: 2, voice: "bass" },
+    strings:        { label: "Strings",         icon: "\uD83C\uDFBB", kind: "melodic", baseOctave: 4, voice: "strings", humanize: true },
+    brass:          { label: "Brass",           icon: "\uD83C\uDFBA", kind: "melodic", baseOctave: 4, voice: "brass", humanize: true },
+    synth_lead:     { label: "Synth Lead",      icon: "\u2699\uFE0F", kind: "melodic", baseOctave: 5, voice: "synthLead" },
+    flute:          { label: "Flute",           icon: "\uD83E\uDEB6", kind: "melodic", baseOctave: 5, voice: "flute", humanize: true },
+    saxophone:      { label: "Saxophone",       icon: "\uD83C\uDFB7", kind: "melodic", baseOctave: 4, voice: "saxophone", humanize: true },
+    marimba:        { label: "Marimba",         icon: "\uD83C\uDFB6", kind: "melodic", baseOctave: 4, voice: "marimba", humanize: true },
+    vibraphone:     { label: "Vibraphone",      icon: "\u2728",       kind: "melodic", baseOctave: 4, voice: "vibraphone", humanize: true },
+    kalimba:        { label: "Kalimba",         icon: "\uD83C\uDF34", kind: "melodic", baseOctave: 5, voice: "kalimba", humanize: true },
+    warm_pad:       { label: "Warm Pad",        icon: "\uD83C\uDF05", kind: "melodic", baseOctave: 3, voice: "warmPad" },
+    ukulele:        { label: "Ukulele",         icon: "\uD83C\uDF3A", kind: "melodic", baseOctave: 4, voice: "ukulele", humanize: true },
+    steel_drum:     { label: "Steel Drum",      icon: "\uD83E\uDD65", kind: "melodic", baseOctave: 5, voice: "steelDrum", humanize: true },
+    glockenspiel:   { label: "Glockenspiel",    icon: "\uD83D\uDD14", kind: "melodic", baseOctave: 5, voice: "glockenspiel", humanize: true },
+    panflute:       { label: "Panflute",        icon: "\uD83C\uDF90", kind: "melodic", baseOctave: 5, voice: "panflute", humanize: true },
+    drums:          { label: "Drums",           icon: "\uD83E\uDD41", kind: "drums" }
+  };
+
+  var INSTRUMENT_ORDER = ["grand_piano","electric_piano","acoustic_guitar","electric_guitar","bass","strings","brass","synth_lead","flute","saxophone","marimba","vibraphone","kalimba","warm_pad","ukulele","steel_drum","glockenspiel","panflute","drums"];
+
+  // one hue per pitch class, cycling like Chrome Music Lab's song maker
+  var NOTE_HUES = [0, 28, 46, 64, 88, 122, 152, 178, 202, 232, 268, 300];
+  function hueForMidi(midi) { return NOTE_HUES[((midi % 12) + 12) % 12]; }
+
+  var TRACK_COLORS = ["var(--blue)","var(--pink)","var(--green)","var(--amber)","var(--purple)"];
+
+  var DRUM_ROWS = [
+    { id: "kick",       label: "kick"       },
+    { id: "snare",      label: "snare"      },
+    { id: "hihat",      label: "hihat"      },
+    { id: "clap",       label: "clap"       },
+    { id: "shaker",     label: "shaker"     },
+    { id: "tambourine", label: "tambourine" }
+  ];
+
+  /* ===================== global state ===================== */
+
+  var tracks = [];
+  var trackIdCounter = 0;
+  var selectedTrackId = null;
+
+  var bpm = 96;
+  var bars = 4;
+  var stepsPerBar = 16;
+  var swing = 0;
+  var loop = true;
+
+  var ctx = null;
+  var masterInput = null;
+  var masterGain = null;
+  var fxExtraNodes = [];
+  var noiseBufferCache = null;
+  var impulseCache = null;
+
+  var isPlaying = false;
+  var activeNodes = [];
+  var loopTimeoutId = null;
+  var rafId = null;
+  var playStartCtxTime = 0;
+  var playTotalDuration = 0;
+
+  // mid-song pitch-shift moments the auto-composer can schedule, e.g. a
+  // riser into a key change - {stepAt, semitones, holdSteps}
+  var pitchEvents = [];
+  var fxEventTimeouts = [];
+
+  /* ===================== dom refs ===================== */
+
+  var trackListEl = document.getElementById("trackList");
+  var editorTitleEl = document.getElementById("editorTitle");
+  var editorControlsEl = document.getElementById("editorControls");
+  var editorGridWrapEl = document.getElementById("editorGridWrap");
+  var transportInfoEl = document.getElementById("transportInfo");
+  var playBtn = document.getElementById("playBtn");
+  var stopBtn = document.getElementById("stopBtn");
+
+  var settingsBtn = document.getElementById("settingsBtn");
+  var fxBtn = document.getElementById("fxBtn");
+  var addTrackModal = document.getElementById("addTrackModal");
+  var settingsModal = document.getElementById("settingsModal");
+  var fxModal = document.getElementById("fxModal");
+  var instrumentGrid = document.getElementById("instrumentGrid");
+
+  var bpmRange = document.getElementById("bpmRange");
+  var bpmVal = document.getElementById("bpmVal");
+  var barsSelect = document.getElementById("barsSelect");
+  var swingRange = document.getElementById("swingRange");
+  var swingVal = document.getElementById("swingVal");
+  var masterVolRange = document.getElementById("masterVolRange");
+  var masterVolVal = document.getElementById("masterVolVal");
+  var loopToggle = document.getElementById("loopToggle");
+
+  /* ===================== helpers ===================== */
+
+  function freqFromMidi(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+  function noteName(midi) {
+    var NOTE_NAMES = ["C","C\u266F","D","D\u266F","E","F","F\u266F","G","G\u266F","A","A\u266F","B"];
+    var oct = Math.floor(midi / 12) - 1;
+    return NOTE_NAMES[midi % 12] + oct;
+  }
+  function isBlackKey(midi) { return [1,3,6,8,10].indexOf(midi % 12) !== -1; }
+  function totalSteps() { return bars * stepsPerBar; }
+  function stepDuration() { return (60 / bpm) / 4; }
+
+  /* ---- note model: track.notes is an array of {step, midi, length} ---- */
+
+  function noteAt(track, step, midi) {
+    for (var i = 0; i < track.notes.length; i++) {
+      var n = track.notes[i];
+      if (n.midi === midi && step >= n.step && step < n.step + n.length) return n;
+    }
+    return null;
+  }
+  function addNote(track, step, midi, length, vel) {
+    var n = { step: step, midi: midi, length: length || 1, vel: vel };
+    track.notes.push(n);
+    return n;
+  }
+  function removeNote(track, note) {
+    var idx = track.notes.indexOf(note);
+    if (idx !== -1) track.notes.splice(idx, 1);
+  }
+  function clampNoteToGrid(note) {
+    var steps = totalSteps();
+    if (note.step < 0) note.step = 0;
+    if (note.step > steps - 1) note.step = steps - 1;
+    if (note.length < 1) note.length = 1;
+    if (note.step + note.length > steps) note.length = steps - note.step;
+  }
+  // trims or removes any other note on the same pitch that overlaps keepNote's range
+  function resolveOverlaps(track, keepNote) {
+    var start = keepNote.step, end = keepNote.step + keepNote.length;
+    for (var i = track.notes.length - 1; i >= 0; i--) {
+      var n = track.notes[i];
+      if (n === keepNote || n.midi !== keepNote.midi) continue;
+      var nEnd = n.step + n.length;
+      if (n.step >= end || nEnd <= start) continue; // no overlap
+      if (n.step < start && nEnd > start && nEnd <= end) {
+        n.length = start - n.step; // trim tail
+        if (n.length <= 0) track.notes.splice(i, 1);
+      } else if (n.step >= start && n.step < end && nEnd > end) {
+        var newStep = end; n.length = nEnd - newStep; n.step = newStep; // trim head
+        if (n.length <= 0) track.notes.splice(i, 1);
+      } else {
+        track.notes.splice(i, 1); // fully covered either way
+      }
+    }
+  }
+
+  /* ---- piano roll drag state (shared across renders) ---- */
+
+  var dragState = null;
+  var rollHandles = null; // { paintRow, track } set by the most recent renderPianoRoll call
+
+  document.addEventListener("pointermove", function (e) {
+    if (!dragState || !rollHandles) return;
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el) return;
+    var cellEl = el.classList && el.classList.contains("roll-cell") ? el : (el.closest ? el.closest(".roll-cell") : null);
+    if (!cellEl) return;
+    var step = parseInt(cellEl.dataset.step, 10);
+    var midi = parseInt(cellEl.dataset.midi, 10);
+
+    if (dragState.mode === "resize") {
+      if (midi !== dragState.note.midi) return;
+      dragState.note.length = Math.max(1, step - dragState.note.step + 1);
+      clampNoteToGrid(dragState.note);
+      resolveOverlaps(dragState.track, dragState.note);
+      rollHandles.paintRow(dragState.note.midi);
+    } else if (dragState.mode === "create") {
+      if (midi !== dragState.midi) return; // note creation stays on the row it started on
+      var anchor = dragState.anchorStep, note = dragState.note;
+      if (step >= anchor) { note.step = anchor; note.length = step - anchor + 1; }
+      else { note.step = step; note.length = anchor - step + 1; }
+      clampNoteToGrid(note);
+      resolveOverlaps(dragState.track, note);
+      rollHandles.paintRow(midi);
+    } else if (dragState.mode === "move") {
+      var note2 = dragState.note;
+      var oldMidi = note2.midi;
+      note2.step = step - dragState.grabOffset;
+      note2.midi = midi;
+      clampNoteToGrid(note2);
+      if (note2.step !== dragState.origStep || note2.midi !== dragState.origMidi) dragState.moved = true;
+      resolveOverlaps(dragState.track, note2);
+      if (oldMidi !== midi) rollHandles.paintRow(oldMidi);
+      rollHandles.paintRow(note2.midi);
+    }
+  });
+
+  document.addEventListener("pointerup", function () {
+    if (dragState && dragState.mode === "move" && !dragState.moved && rollHandles) {
+      // a click with no drag on an existing note removes it, same as before
+      removeNote(dragState.track, dragState.note);
+      rollHandles.paintRow(dragState.note.midi);
+    }
+    document.body.classList.remove("roll-dragging");
+    dragState = null;
+  });
+
+  function openModal(el) { el.hidden = false; }
+  function closeModal(el) { el.hidden = true; }
+
+  Array.prototype.slice.call(document.querySelectorAll(".modal-close")).forEach(function (btn) {
+    btn.addEventListener("click", function () { closeModal(document.getElementById(btn.dataset.close)); });
+  });
+  Array.prototype.slice.call(document.querySelectorAll(".modal-overlay")).forEach(function (overlay) {
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) closeModal(overlay); });
+  });
+
+  /* ===================== audio engine setup ===================== */
+
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterInput = ctx.createGain();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = parseInt(masterVolRange.value, 10) / 100;
+      masterGain.connect(ctx.destination);
+      rebuildMasterChain();
+      tracks.forEach(ensureTrackNode);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  function ensureTrackNode(track) {
+    if (!ctx || track.gainNode) return;
+    track.gainNode = ctx.createGain();
+    track.gainNode.gain.value = track.muted ? 0 : track.volume;
+    track.gainNode.connect(masterInput);
+  }
+
+  function updateTrackGain(track) {
+    if (!track.gainNode) return;
+    var anySolo = tracks.some(function (t) { return t.solo; });
+    var audible = !track.muted && (!anySolo || track.solo);
+    track.gainNode.gain.value = audible ? track.volume : 0;
+  }
+
+  function getNoiseBuffer(audioCtx) {
+    if (noiseBufferCache) return noiseBufferCache;
+    var len = audioCtx.sampleRate * 1;
+    var buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    noiseBufferCache = buf;
+    return buf;
+  }
+
+  /* ===================== instrument voices ===================== */
+
+  var VOICES = {
+
+    piano: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // hammer strike transient - a short filtered click at the very start of the note,
+      // brighter when struck harder, like felt meeting string with more force
+      var hammer = c.createBufferSource(); hammer.buffer = getNoiseBuffer(c);
+      var hammerFilter = c.createBiquadFilter(); hammerFilter.type = "bandpass";
+      hammerFilter.frequency.value = freq * (2.2 + vel * 0.9); hammerFilter.Q.value = 1.1;
+      var hammerGain = c.createGain();
+      hammerGain.gain.setValueAtTime(vel * 0.15, when);
+      hammerGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.03);
+      hammer.connect(hammerFilter); hammerFilter.connect(hammerGain); hammerGain.connect(dest);
+      hammer.start(when); hammer.stop(when + 0.04);
+      activeNodes.push(hammer);
+
+      // low soundboard "thud" under the attack - the body of the instrument resonating
+      var thud = c.createBufferSource(); thud.buffer = getNoiseBuffer(c);
+      var thudFilter = c.createBiquadFilter(); thudFilter.type = "lowpass"; thudFilter.frequency.value = 220;
+      var thudGain = c.createGain();
+      thudGain.gain.setValueAtTime(vel * 0.055, when);
+      thudGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.09);
+      thud.connect(thudFilter); thudFilter.connect(thudGain); thudGain.connect(dest);
+      thud.start(when); thud.stop(when + 0.1);
+      activeNodes.push(thud);
+
+      [1, 2, 3, 4, 5, 6, 7].forEach(function (h, i) {
+        // each partial is a pair of very slightly detuned strings (a unison "course"),
+        // the way a real piano note is actually 2-3 strings beating gently against each other
+        [-1.6, 1.6].forEach(function (cents) {
+          var osc = c.createOscillator();
+          osc.type = i === 0 ? "triangle" : "sine";
+          // real piano strings run slightly sharp on higher partials (inharmonicity)
+          osc.frequency.value = freq * h * (1 + 0.0004 * h * h);
+          osc.detune.value = cents;
+          var g = c.createGain();
+          var peak = vel * (i === 0 ? 0.27 : 0.21 / (h * h));
+          g.gain.setValueAtTime(0, when);
+          g.gain.linearRampToValueAtTime(peak, when + 0.006);
+          // two-stage decay: a quick initial falloff into a longer natural tail
+          g.gain.exponentialRampToValueAtTime(Math.max(peak * 0.22, 0.001), when + dur * 0.35 + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.0001, when + dur + (h <= 2 ? 1.5 : 0.9));
+          osc.connect(g); g.connect(dest);
+          osc.start(when); osc.stop(when + dur + 1.6);
+          activeNodes.push(osc);
+        });
+      });
+
+      // sympathetic resonance - the other strings and soundboard ringing
+      // very faintly in response, the thing that gives a real piano its
+      // "air" and makes a note feel like it's happening inside a wooden box
+      var res = c.createBufferSource(); res.buffer = getNoiseBuffer(c);
+      var resFilter = c.createBiquadFilter(); resFilter.type = "bandpass"; resFilter.frequency.value = freq * 1.02; resFilter.Q.value = 22;
+      var resGain = c.createGain();
+      resGain.gain.setValueAtTime(0, when);
+      resGain.gain.linearRampToValueAtTime(vel * 0.02, when + 0.02);
+      resGain.gain.exponentialRampToValueAtTime(0.0001, when + dur + 2.2);
+      res.connect(resFilter); resFilter.connect(resGain); resGain.connect(dest);
+      res.start(when); res.stop(when + dur + 2.3);
+      activeNodes.push(res);
+    },
+
+    epiano: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var carrier = c.createOscillator(); carrier.type = "sine"; carrier.frequency.value = freq;
+      var modulator = c.createOscillator(); modulator.type = "sine"; modulator.frequency.value = freq * 3.01;
+      var modGain = c.createGain();
+      modGain.gain.setValueAtTime(freq * 1.4, when);
+      modGain.gain.exponentialRampToValueAtTime(0.001, when + 0.4);
+      modulator.connect(modGain); modGain.connect(carrier.frequency);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.5, when + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.9);
+      carrier.connect(g); g.connect(dest);
+      carrier.start(when); modulator.start(when);
+      carrier.stop(when + dur + 1); modulator.stop(when + dur + 1);
+      activeNodes.push(carrier, modulator);
+    },
+
+    acousticGuitar: pluckVoice(false),
+    electricGuitar: pluckVoice(true),
+
+    bass: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // finger/pick attack click
+      var click = c.createBufferSource(); click.buffer = getNoiseBuffer(c);
+      var clickFilter = c.createBiquadFilter(); clickFilter.type = "lowpass"; clickFilter.frequency.value = freq * 5;
+      var clickGain = c.createGain();
+      clickGain.gain.setValueAtTime(vel * 0.18, when);
+      clickGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.02);
+      click.connect(clickFilter); clickFilter.connect(clickGain); clickGain.connect(dest);
+      click.start(when); click.stop(when + 0.03);
+      activeNodes.push(click);
+
+      // a real plucked string underneath the sub-sine, instead of just
+      // detuned oscillators, gives the fretted attack and natural decay
+      // curve that a bass guitar string actually has
+      var stringOut = karplusPluck(c, dest, freq, when, dur, vel, { brightness: freq * 3 + 500, sustain: dur + 0.6 });
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = freq * 4 + 250;
+      var stringLevel = c.createGain(); stringLevel.gain.value = 0.6;
+      stringOut.connect(lp); lp.connect(stringLevel); stringLevel.connect(dest);
+      activeNodes.push(stringLevel);
+
+      // sub-octave sine underneath for low-end weight a plucked string alone can't give
+      var sub = c.createOscillator(); sub.type = "sine"; sub.frequency.value = freq / 2;
+      var subGain = c.createGain();
+      subGain.gain.setValueAtTime(0, when);
+      subGain.gain.linearRampToValueAtTime(vel * 0.34, when + 0.01);
+      subGain.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.5);
+      sub.connect(subGain); subGain.connect(dest);
+      sub.start(when); sub.stop(when + dur + 0.6);
+      activeNodes.push(sub);
+    },
+
+    strings: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.32, when + 0.18);
+      g.gain.linearRampToValueAtTime(vel * 0.26, when + dur * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.9);
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = freq * 3 + 800;
+      g.connect(lp); lp.connect(dest);
+
+      // wider ensemble of slightly detuned voices, like a section rather than one player
+      [-9, -4, 0, 4, 9].forEach(function (cents) {
+        var osc = c.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = freq; osc.detune.value = cents;
+        osc.connect(g);
+        osc.start(when); osc.stop(when + dur + 1);
+        activeNodes.push(osc);
+      });
+
+      // soft bow noise under the attack
+      var bow = c.createBufferSource(); bow.buffer = getNoiseBuffer(c);
+      var bowFilter = c.createBiquadFilter(); bowFilter.type = "bandpass"; bowFilter.frequency.value = freq * 1.5; bowFilter.Q.value = 0.8;
+      var bowGain = c.createGain();
+      bowGain.gain.setValueAtTime(0, when);
+      bowGain.gain.linearRampToValueAtTime(vel * 0.05, when + 0.15);
+      bowGain.gain.linearRampToValueAtTime(0.0001, when + dur * 0.5);
+      bow.connect(bowFilter); bowFilter.connect(bowGain); bowGain.connect(dest);
+      bow.start(when); bow.stop(when + dur * 0.5 + 0.1);
+      activeNodes.push(bow);
+    },
+
+    brass: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var osc = c.createOscillator(); osc.type = "sawtooth";
+      // a slight scoop up into pitch, like a player's embouchure settling
+      osc.frequency.setValueAtTime(freq * 0.985, when);
+      osc.frequency.linearRampToValueAtTime(freq, when + 0.045);
+      var bp = c.createBiquadFilter(); bp.type = "lowpass";
+      bp.frequency.setValueAtTime(freq * 1.4, when);
+      bp.frequency.linearRampToValueAtTime(freq * 4.2, when + 0.08);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.4, when + 0.05);
+      g.gain.linearRampToValueAtTime(vel * 0.3, when + dur * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.4);
+      osc.connect(bp); bp.connect(g); g.connect(dest);
+      osc.start(when); osc.stop(when + dur + 0.5);
+      activeNodes.push(osc);
+
+      // breath noise, quieter than the sax's since brass is more focused
+      var breath = c.createBufferSource(); breath.buffer = getNoiseBuffer(c);
+      var breathFilter = c.createBiquadFilter(); breathFilter.type = "bandpass"; breathFilter.frequency.value = freq * 1.8; breathFilter.Q.value = 1.2;
+      var breathGain = c.createGain();
+      breathGain.gain.setValueAtTime(vel * 0.03, when);
+      breathGain.gain.linearRampToValueAtTime(vel * 0.02, when + dur * 0.5);
+      breathGain.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.2);
+      breath.connect(breathFilter); breathFilter.connect(breathGain); breathGain.connect(dest);
+      breath.start(when); breath.stop(when + dur + 0.25);
+      activeNodes.push(breath);
+    },
+
+    synthLead: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var osc = c.createOscillator(); osc.type = "square"; osc.frequency.value = freq;
+      var osc2 = c.createOscillator(); osc2.type = "sawtooth"; osc2.frequency.value = freq; osc2.detune.value = 8;
+      var lfo = c.createOscillator(); lfo.frequency.value = 6;
+      var lfoGain = c.createGain(); lfoGain.gain.value = 4;
+      lfo.connect(lfoGain); lfoGain.connect(osc.detune);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.3, when + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.3);
+      osc.connect(g); osc2.connect(g); g.connect(dest);
+      osc.start(when); osc2.start(when); lfo.start(when);
+      osc.stop(when + dur + 0.4); osc2.stop(when + dur + 0.4); lfo.stop(when + dur + 0.4);
+      activeNodes.push(osc, osc2, lfo);
+    },
+
+    saxophone: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // reed layer: a scoop up into pitch, like a player tonguing the note
+      var osc = c.createOscillator(); osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(freq * 0.97, when);
+      osc.frequency.linearRampToValueAtTime(freq, when + 0.055);
+      var osc2 = c.createOscillator(); osc2.type = "square"; osc2.frequency.value = freq; osc2.detune.value = 5;
+
+      // body formants that give the sax its characteristic honk
+      var f1 = c.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = freq * 1.5; f1.Q.value = 4.5;
+      var f2 = c.createBiquadFilter(); f2.type = "bandpass"; f2.frequency.value = freq * 3.1; f2.Q.value = 3.5;
+      var f3 = c.createBiquadFilter(); f3.type = "bandpass"; f3.frequency.value = freq * 5.4; f3.Q.value = 2.5;
+
+      var mix = c.createGain();
+      osc.connect(f1); osc.connect(f2); osc.connect(f3);
+      osc2.connect(f1); osc2.connect(f2);
+      f1.connect(mix); f2.connect(mix); f3.connect(mix);
+
+      // breath noise
+      var noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c);
+      var noiseFilter = c.createBiquadFilter(); noiseFilter.type = "bandpass"; noiseFilter.frequency.value = freq * 2; noiseFilter.Q.value = 1;
+      var noiseGain = c.createGain(); noiseGain.gain.value = vel * 0.04;
+      noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(mix);
+
+      // vibrato that kicks in after the note has settled, like a real player
+      var lfo = c.createOscillator(); lfo.frequency.value = 5.5;
+      var lfoGain = c.createGain();
+      lfoGain.gain.setValueAtTime(0, when);
+      lfoGain.gain.setValueAtTime(0, when + 0.15);
+      lfoGain.gain.linearRampToValueAtTime(6, when + 0.38);
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency); lfoGain.connect(osc2.frequency);
+
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.42, when + 0.05);
+      g.gain.linearRampToValueAtTime(vel * 0.34, when + dur * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.35);
+
+      mix.connect(g); g.connect(dest);
+
+      osc.start(when); osc2.start(when); lfo.start(when); noise.start(when);
+      osc.stop(when + dur + 0.4); osc2.stop(when + dur + 0.4); lfo.stop(when + dur + 0.4); noise.stop(when + dur + 0.4);
+      activeNodes.push(osc, osc2, lfo, noise);
+    },
+
+    flute: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq;
+      var lfo = c.createOscillator(); lfo.frequency.value = 5;
+      var lfoGain = c.createGain();
+      // vibrato eases in after the note settles, rather than being on from note-start
+      lfoGain.gain.setValueAtTime(0, when);
+      lfoGain.gain.setValueAtTime(0, when + 0.2);
+      lfoGain.gain.linearRampToValueAtTime(3.5, when + 0.45);
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+      var noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c);
+      var hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2200;
+      var ng = c.createGain(); ng.gain.value = vel * 0.03;
+      noise.connect(hp); hp.connect(ng);
+
+      // breathy "chiff" at the very start of the note
+      var chiff = c.createBufferSource(); chiff.buffer = getNoiseBuffer(c);
+      var chiffFilter = c.createBiquadFilter(); chiffFilter.type = "bandpass"; chiffFilter.frequency.value = freq * 3; chiffFilter.Q.value = 1;
+      var chiffGain = c.createGain();
+      chiffGain.gain.setValueAtTime(vel * 0.1, when);
+      chiffGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+      chiff.connect(chiffFilter); chiffFilter.connect(chiffGain); chiffGain.connect(dest);
+      chiff.start(when); chiff.stop(when + 0.06);
+
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.34, when + 0.09);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.5);
+      osc.connect(g); ng.connect(g); g.connect(dest);
+      osc.start(when); lfo.start(when); noise.start(when);
+      osc.stop(when + dur + 0.6); lfo.stop(when + dur + 0.6); noise.stop(when + dur + 0.6);
+      activeNodes.push(osc, lfo, noise, chiff);
+    },
+
+    marimba: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // wooden mallet strike
+      var strike = c.createBufferSource(); strike.buffer = getNoiseBuffer(c);
+      var sf = c.createBiquadFilter(); sf.type = "bandpass"; sf.frequency.value = freq * 3; sf.Q.value = 2;
+      var sg = c.createGain();
+      sg.gain.setValueAtTime(vel * 0.2, when);
+      sg.gain.exponentialRampToValueAtTime(0.0001, when + 0.025);
+      strike.connect(sf); sf.connect(sg); sg.connect(dest);
+      strike.start(when); strike.stop(when + 0.03);
+      activeNodes.push(strike);
+
+      // fundamental plus the characteristic ~4th-partial "bark" of a wooden bar
+      [{ mult: 1, amp: 1, tail: 1 }, { mult: 3.93, amp: 0.22, tail: 0.35 }].forEach(function (p) {
+        var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq * p.mult;
+        var g = c.createGain();
+        var peak = vel * 0.5 * p.amp;
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur * p.tail * 0.5 + 0.35);
+        osc.connect(g); g.connect(dest);
+        osc.start(when); osc.stop(when + dur + 0.5);
+        activeNodes.push(osc);
+      });
+    },
+
+    vibraphone: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      var mallet = c.createBufferSource(); mallet.buffer = getNoiseBuffer(c);
+      var mf = c.createBiquadFilter(); mf.type = "bandpass"; mf.frequency.value = freq * 4; mf.Q.value = 3;
+      var mg = c.createGain();
+      mg.gain.setValueAtTime(vel * 0.12, when);
+      mg.gain.exponentialRampToValueAtTime(0.0001, when + 0.02);
+      mallet.connect(mf); mf.connect(mg); mg.connect(dest);
+      mallet.start(when); mallet.stop(when + 0.03);
+      activeNodes.push(mallet);
+
+      // slow motor tremolo, the signature shimmer of a vibraphone
+      var trem = c.createOscillator(); trem.frequency.value = 5;
+      var tremGain = c.createGain(); tremGain.gain.value = 0.35;
+
+      [1, 2, 4].forEach(function (h, i) {
+        var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq * h;
+        var g = c.createGain();
+        var peak = vel * (i === 0 ? 0.45 : 0.14 / h);
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 1.5);
+        var tremNode = c.createGain(); tremNode.gain.value = 1;
+        tremGain.connect(tremNode.gain);
+        osc.connect(g); g.connect(tremNode); tremNode.connect(dest);
+        osc.start(when); osc.stop(when + dur + 1.6);
+        activeNodes.push(osc);
+      });
+      trem.connect(tremGain);
+      trem.start(when); trem.stop(when + dur + 1.6);
+      activeNodes.push(trem);
+    },
+
+    kalimba: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      var pluck = c.createBufferSource(); pluck.buffer = getNoiseBuffer(c);
+      var pf = c.createBiquadFilter(); pf.type = "bandpass"; pf.frequency.value = freq * 5; pf.Q.value = 4;
+      var pg = c.createGain();
+      pg.gain.setValueAtTime(vel * 0.25, when);
+      pg.gain.exponentialRampToValueAtTime(0.0001, when + 0.015);
+      pluck.connect(pf); pf.connect(pg); pg.connect(dest);
+      pluck.start(when); pluck.stop(when + 0.02);
+      activeNodes.push(pluck);
+
+      [1, 2, 3].forEach(function (h, i) {
+        var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq * h;
+        var g = c.createGain();
+        var peak = vel * (i === 0 ? 0.42 : 0.12 / h);
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.003);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur * 0.4 + 0.4);
+        osc.connect(g); g.connect(dest);
+        osc.start(when); osc.stop(when + dur + 0.5);
+        activeNodes.push(osc);
+      });
+    },
+
+    warmPad: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      // slow swell in - a pad breathing to life rather than snapping on
+      g.gain.linearRampToValueAtTime(vel * 0.28, when + 0.35);
+      g.gain.linearRampToValueAtTime(vel * 0.22, when + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 1.6);
+
+      var lp = c.createBiquadFilter(); lp.type = "lowpass";
+      lp.frequency.setValueAtTime(freq * 1.5, when);
+      lp.frequency.linearRampToValueAtTime(freq * 3, when + 0.6);
+      g.connect(lp); lp.connect(dest);
+
+      // a lush chorus of detuned saws underneath, like a warm vintage synth stack
+      [-7, -2, 2, 7].forEach(function (cents) {
+        var osc = c.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = freq; osc.detune.value = cents;
+        osc.connect(g);
+        osc.start(when); osc.stop(when + dur + 1.8);
+        activeNodes.push(osc);
+      });
+      var sub = c.createOscillator(); sub.type = "sine"; sub.frequency.value = freq / 2;
+      var subGain = c.createGain(); subGain.gain.value = 0.3;
+      sub.connect(subGain); subGain.connect(g);
+      sub.start(when); sub.stop(when + dur + 1.8);
+      activeNodes.push(sub);
+    },
+
+    ukulele: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      var noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c);
+      var bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq * 3; bp.Q.value = 5;
+      var ng = c.createGain();
+      ng.gain.setValueAtTime(vel * 0.3, when);
+      ng.gain.exponentialRampToValueAtTime(0.001, when + 0.03);
+      noise.connect(bp); bp.connect(ng); ng.connect(dest);
+      noise.start(when); noise.stop(when + 0.04);
+      activeNodes.push(noise);
+
+      // short-scale nylon string - brighter and shorter-ringing than the
+      // guitar's strings, true to a ukulele's quick, cheerful decay
+      var stringOut = karplusPluck(c, dest, freq, when, dur, vel, { brightness: freq * 6 + 2800, sustain: dur + 0.55 });
+      var level = c.createGain(); level.gain.value = 0.85;
+      stringOut.connect(level); level.connect(dest);
+      activeNodes.push(level);
+    },
+
+    steelDrum: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // mallet knock, softer/rounder than marimba's wood strike
+      var strike = c.createBufferSource(); strike.buffer = getNoiseBuffer(c);
+      var sf = c.createBiquadFilter(); sf.type = "bandpass"; sf.frequency.value = freq * 2.2; sf.Q.value = 1.5;
+      var sg = c.createGain();
+      sg.gain.setValueAtTime(vel * 0.12, when);
+      sg.gain.exponentialRampToValueAtTime(0.0001, when + 0.03);
+      strike.connect(sf); sf.connect(sg); sg.connect(dest);
+      strike.start(when); strike.stop(when + 0.04);
+      activeNodes.push(strike);
+
+      // steelpan partials are famously inharmonic - fundamental plus a couple
+      // of near-but-not-quite-integer overtones give it that shimmering,
+      // slightly detuned "pan" character, with a tiny pitch scoop on attack
+      [{ mult: 1, amp: 1, tail: 1 }, { mult: 2.02, amp: 0.35, tail: 0.6 }, { mult: 3.98, amp: 0.15, tail: 0.4 }].forEach(function (p) {
+        var osc = c.createOscillator(); osc.type = "sine";
+        osc.frequency.setValueAtTime(freq * p.mult * 0.985, when);
+        osc.frequency.linearRampToValueAtTime(freq * p.mult, when + 0.05);
+        var g = c.createGain();
+        var peak = vel * 0.4 * p.amp;
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur * p.tail * 0.6 + 0.5);
+        osc.connect(g); g.connect(dest);
+        osc.start(when); osc.stop(when + dur + 0.9);
+        activeNodes.push(osc);
+      });
+    },
+
+    glockenspiel: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      var tick = c.createBufferSource(); tick.buffer = getNoiseBuffer(c);
+      var tf = c.createBiquadFilter(); tf.type = "highpass"; tf.frequency.value = freq * 3;
+      var tg = c.createGain();
+      tg.gain.setValueAtTime(vel * 0.12, when);
+      tg.gain.exponentialRampToValueAtTime(0.0001, when + 0.012);
+      tick.connect(tf); tf.connect(tg); tg.connect(dest);
+      tick.start(when); tick.stop(when + 0.015);
+      activeNodes.push(tick);
+
+      // metal bar bell tone: bright fundamental with a sharp, inharmonic
+      // upper partial that decays much faster - classic glockenspiel "ting"
+      [{ mult: 1, amp: 1, tail: 0.9 }, { mult: 4.1, amp: 0.5, tail: 0.18 }, { mult: 6.3, amp: 0.22, tail: 0.1 }].forEach(function (p) {
+        var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq * p.mult;
+        var g = c.createGain();
+        var peak = vel * 0.38 * p.amp;
+        g.gain.setValueAtTime(0, when);
+        g.gain.linearRampToValueAtTime(peak, when + 0.003);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur * p.tail * 0.5 + 0.35);
+        osc.connect(g); g.connect(dest);
+        osc.start(when); osc.stop(when + dur + 0.6);
+        activeNodes.push(osc);
+      });
+    },
+
+    panflute: function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // airy breath noise sits under the whole note, not just the attack -
+      // this is what makes a panflute read as "breathy" rather than a flute
+      var breath = c.createBufferSource(); breath.buffer = getNoiseBuffer(c);
+      var bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq * 1.8; bp.Q.value = 0.9;
+      var bg = c.createGain();
+      bg.gain.setValueAtTime(0, when);
+      bg.gain.linearRampToValueAtTime(vel * 0.09, when + 0.06);
+      bg.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.3);
+      breath.connect(bp); bp.connect(bg); bg.connect(dest);
+      breath.start(when); breath.stop(when + dur + 0.35);
+      activeNodes.push(breath);
+
+      var osc = c.createOscillator(); osc.type = "sine"; osc.frequency.value = freq;
+      var osc2 = c.createOscillator(); osc2.type = "sine"; osc2.frequency.value = freq * 2; // gentle octave shimmer
+      var lfo = c.createOscillator(); lfo.frequency.value = 4.5;
+      var lfoGain = c.createGain(); lfoGain.gain.value = 4;
+      lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+
+      var g = c.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(vel * 0.3, when + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.4);
+      var g2 = c.createGain(); g2.gain.value = 0.12;
+      osc.connect(g); osc2.connect(g2); g2.connect(g); g.connect(dest);
+
+      osc.start(when); osc2.start(when); lfo.start(when);
+      osc.stop(when + dur + 0.5); osc2.stop(when + dur + 0.5); lfo.stop(when + dur + 0.5);
+      activeNodes.push(osc, osc2, lfo);
+    }
+  };
+
+  // physically-modeled plucked string (Karplus-Strong): a noise burst
+  // excites a tuned delay line whose feedback loop is damped by a lowpass
+  // filter, the same way a real string's energy actually decays - higher
+  // harmonics die out first, exactly like plucking a guitar or bass string.
+  // This replaces "a stack of detuned oscillators" with something that
+  // behaves like an actual vibrating string.
+  function karplusPluck(c, dest, freq, when, dur, vel, opts) {
+    opts = opts || {};
+    var brightness = opts.brightness || 4000; // feedback-loop lowpass - lower = warmer/duller string, higher = more metallic
+    var sustainSeconds = opts.sustain || (dur + 1.0);
+    var pluckLen = Math.min(0.012, 1 / freq);
+
+    // per-period feedback gain tuned so the loop decays about 60dB over sustainSeconds
+    var periods = Math.max(1, freq * sustainSeconds);
+    var damping = Math.min(0.998, Math.pow(0.001, 1 / periods));
+
+    var delay = c.createDelay(1);
+    delay.delayTime.value = 1 / freq;
+
+    var loopFilter = c.createBiquadFilter();
+    loopFilter.type = "lowpass";
+    loopFilter.frequency.value = brightness;
+
+    var feedback = c.createGain();
+    feedback.gain.value = damping;
+
+    var exciter = c.createBufferSource(); exciter.buffer = getNoiseBuffer(c);
+    var exciteFilter = c.createBiquadFilter(); exciteFilter.type = "lowpass"; exciteFilter.frequency.value = freq * 6;
+    var exciteGain = c.createGain();
+    exciteGain.gain.setValueAtTime(vel, when);
+    exciteGain.gain.exponentialRampToValueAtTime(0.0005, when + pluckLen);
+
+    exciter.connect(exciteFilter); exciteFilter.connect(exciteGain); exciteGain.connect(delay);
+    delay.connect(loopFilter); loopFilter.connect(feedback); feedback.connect(delay);
+
+    var out = c.createGain(); out.gain.value = 1;
+    loopFilter.connect(out);
+
+    exciter.start(when); exciter.stop(when + pluckLen + 0.02);
+    activeNodes.push(exciter, delay, loopFilter, feedback, out);
+
+    return out; // caller connects this onward (through shaping/dest)
+  }
+
+  function pluckVoice(electric) {
+    return function (c, dest, midi, when, dur, vel) {
+      var freq = freqFromMidi(midi);
+
+      // pick/finger attack transient
+      var noise = c.createBufferSource(); noise.buffer = getNoiseBuffer(c);
+      var bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq * 2; bp.Q.value = 6;
+      var ng = c.createGain();
+      ng.gain.setValueAtTime(vel * 0.35, when);
+      ng.gain.exponentialRampToValueAtTime(0.001, when + 0.045);
+      noise.connect(bp); bp.connect(ng); ng.connect(dest);
+      noise.start(when); noise.stop(when + 0.05);
+      activeNodes.push(noise);
+
+      // the string itself - a real delay-line resonator tuned to the note,
+      // brighter and longer-ringing for electric, warmer and shorter for acoustic
+      var brightness = electric ? (freq * 7 + 2500) : (freq * 4 + 1200);
+      var sustain = dur + (electric ? 1.6 : 1.0);
+      var stringOut = karplusPluck(c, dest, freq, when, dur, vel, { brightness: brightness, sustain: sustain });
+
+      var level = c.createGain(); level.gain.value = electric ? 0.95 : 0.85;
+      if (electric) {
+        var shaper = c.createWaveShaper();
+        var curve = new Float32Array(256);
+        for (var i = 0; i < 256; i++) { var x = (i / 255) * 2 - 1; curve[i] = Math.tanh(x * 2.4) * 0.9; }
+        shaper.curve = curve;
+        stringOut.connect(shaper); shaper.connect(level);
+      } else {
+        stringOut.connect(level);
+      }
+      level.connect(dest);
+      activeNodes.push(level);
+
+      // a fast-decaying octave-up shimmer right at the pluck, like the
+      // bright transient overtone you hear the instant a string is struck
+      var osc2 = c.createOscillator(); osc2.type = "triangle"; osc2.frequency.value = freq * 2;
+      var g2 = c.createGain();
+      g2.gain.setValueAtTime(vel * 0.1, when);
+      g2.gain.exponentialRampToValueAtTime(0.0001, when + 0.14);
+      osc2.connect(g2); g2.connect(dest);
+      osc2.start(when); osc2.stop(when + 0.2);
+      activeNodes.push(osc2);
+    };
+  }
+
+  function playVoice(track, midi, when, dur, vel) {
+    getCtx(); ensureTrackNode(track);
+    var inst = INSTRUMENTS[track.instrumentId];
+    var fn = VOICES[inst.voice];
+    if (!fn) return;
+    var actualWhen = when;
+    var actualVel = vel || 0.85;
+    if (inst.humanize) {
+      // tiny timing and velocity variance so acoustic instruments don't sound
+      // machine-quantized - real players are never perfectly on the grid
+      actualWhen += (Math.random() - 0.5) * 0.012;
+      actualVel *= (0.92 + Math.random() * 0.16);
+    }
+    fn(ctx, track.gainNode, midi, actualWhen, dur, actualVel);
+  }
+
+  /* ---- drums ---- */
+
+  function triggerDrum(track, id, when) {
+    getCtx(); ensureTrackNode(track);
+    var dest = track.gainNode;
+    if (id === "kick") return triggerKick(dest, when);
+    if (id === "snare") return triggerSnare(dest, when);
+    if (id === "hihat") return triggerHihat(dest, when);
+    if (id === "clap") return triggerClap(dest, when);
+    if (id === "shaker") return triggerShaker(dest, when);
+    if (id === "tambourine") return triggerTambourine(dest, when);
+  }
+
+  function triggerKick(dest, when) {
+    var osc = ctx.createOscillator(); osc.type = "sine";
+    var g = ctx.createGain();
+    osc.frequency.setValueAtTime(150, when);
+    osc.frequency.exponentialRampToValueAtTime(40, when + 0.14);
+    g.gain.setValueAtTime(0.9, when);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.22);
+    osc.connect(g); g.connect(dest);
+    osc.start(when); osc.stop(when + 0.25);
+    activeNodes.push(osc);
+  }
+
+  function triggerSnare(dest, when) {
+    var noise = ctx.createBufferSource(); noise.buffer = getNoiseBuffer(ctx);
+    var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1800;
+    var ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.5, when);
+    ng.gain.exponentialRampToValueAtTime(0.001, when + 0.16);
+    noise.connect(bp); bp.connect(ng); ng.connect(dest);
+    noise.start(when); noise.stop(when + 0.18);
+
+    var osc = ctx.createOscillator(); osc.type = "triangle"; osc.frequency.value = 190;
+    var og = ctx.createGain();
+    og.gain.setValueAtTime(0.35, when);
+    og.gain.exponentialRampToValueAtTime(0.001, when + 0.1);
+    osc.connect(og); og.connect(dest);
+    osc.start(when); osc.stop(when + 0.12);
+
+    activeNodes.push(noise, osc);
+  }
+
+  // soft rattling shash, like a hand shaker on the beach - two quick noise
+  // bursts (the front and back of the shake) through a mid-bright filter
+  function triggerShaker(dest, when) {
+    [0, 0.045].forEach(function (offset) {
+      var noise = ctx.createBufferSource(); noise.buffer = getNoiseBuffer(ctx);
+      var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 5500; bp.Q.value = 0.7;
+      var g = ctx.createGain();
+      var t = when + offset;
+      g.gain.setValueAtTime(0.001, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+      noise.connect(bp); bp.connect(g); g.connect(dest);
+      noise.start(t); noise.stop(t + 0.1);
+      activeNodes.push(noise);
+    });
+  }
+
+  // jingly metal discs - filtered noise plus a cluster of high, slightly
+  // detuned sine "jingles" that ring out longer than the hit itself
+  function triggerTambourine(dest, when) {
+    var noise = ctx.createBufferSource(); noise.buffer = getNoiseBuffer(ctx);
+    var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 4500;
+    var ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.3, when);
+    ng.gain.exponentialRampToValueAtTime(0.001, when + 0.05);
+    noise.connect(hp); hp.connect(ng); ng.connect(dest);
+    noise.start(when); noise.stop(when + 0.06);
+    activeNodes.push(noise);
+
+    [3800, 4650, 5700, 6900].forEach(function (freq, i) {
+      var osc = ctx.createOscillator(); osc.type = "sine"; osc.frequency.value = freq + (Math.random() - 0.5) * 60;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.05, when);
+      g.gain.exponentialRampToValueAtTime(0.001, when + 0.16 + i * 0.02);
+      osc.connect(g); g.connect(dest);
+      osc.start(when); osc.stop(when + 0.22);
+      activeNodes.push(osc);
+    });
+  }
+
+  function triggerHihat(dest, when) {
+    var noise = ctx.createBufferSource(); noise.buffer = getNoiseBuffer(ctx);
+    var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.28, when);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.045);
+    noise.connect(hp); hp.connect(g); g.connect(dest);
+    noise.start(when); noise.stop(when + 0.06);
+    activeNodes.push(noise);
+  }
+
+  function triggerClap(dest, when) {
+    [0, 0.012, 0.024].forEach(function (offset) {
+      var noise = ctx.createBufferSource(); noise.buffer = getNoiseBuffer(ctx);
+      var bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1200;
+      var g = ctx.createGain();
+      var t = when + offset;
+      g.gain.setValueAtTime(0.4, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      noise.connect(bp); bp.connect(g); g.connect(dest);
+      noise.start(t); noise.stop(t + 0.12);
+      activeNodes.push(noise);
+    });
+  }
+
+  /* ===================== master fx (unchanged pattern) ===================== */
+
+  var EFFECTS = [
+    { id: "muffle",     label: "muffle" },
+    { id: "crush",      label: "distortion" },
+    { id: "bitcrush",   label: "bitcrush" },
+    { id: "flanger",    label: "flanger" },
+    { id: "pitchshift", label: "pitch shift" },
+    { id: "echo",       label: "echo" },
+    { id: "reverb",     label: "reverb" }
+  ];
+  var FX_ORDER = ["muffle", "crush", "bitcrush", "flanger", "pitchshift", "echo", "reverb"];
+  var masterFx = {};
+  EFFECTS.forEach(function (fx) { masterFx[fx.id] = { on: false, amount: 50 }; });
+  // a touch of reverb on by default gives everything a little more air and polish
+  masterFx.reverb.on = true;
+  masterFx.reverb.amount = 22;
+
+  var fxList = document.getElementById("fxList");
+  var fxUIRefs = {}; // fx.id -> { checkbox, range }
+  EFFECTS.forEach(function (fx) {
+    var item = document.createElement("div");
+    item.className = "fx-item";
+    var startAmount = masterFx[fx.id].amount;
+    var startOn = masterFx[fx.id].on;
+    item.innerHTML =
+      '<label class="fx-toggle"><input type="checkbox" data-fx="' + fx.id + '"' + (startOn ? " checked" : "") + '><span>' + fx.label + '</span></label>' +
+      '<input type="range" class="fx-amount" min="0" max="100" value="' + startAmount + '" data-fx-amount="' + fx.id + '"' + (startOn ? "" : " disabled") +
+      (fx.id === "pitchshift" ? ' title="50% = no shift, lower = pitch down, higher = pitch up (\u00b112 semitones)"' : '') + '>';
+    fxList.appendChild(item);
+    var checkboxEl = item.querySelector('input[type="checkbox"]');
+    var rangeEl = item.querySelector(".fx-amount");
+    fxUIRefs[fx.id] = { checkbox: checkboxEl, range: rangeEl };
+    checkboxEl.addEventListener("change", function (e) {
+      masterFx[fx.id].on = e.currentTarget.checked;
+      rangeEl.disabled = !e.currentTarget.checked;
+      rebuildMasterChain();
+    });
+    rangeEl.addEventListener("input", function (e) {
+      masterFx[fx.id].amount = parseInt(e.currentTarget.value, 10);
+      if (masterFx[fx.id].on) rebuildMasterChain();
+    });
+  });
+
+  // keeps the fx panel in sync when code (auto-create, mid-song pitch
+  // automation) changes masterFx instead of the user dragging a slider
+  function syncFxUI() {
+    EFFECTS.forEach(function (fx) {
+      var refs = fxUIRefs[fx.id];
+      if (!refs) return;
+      refs.checkbox.checked = masterFx[fx.id].on;
+      refs.range.value = masterFx[fx.id].amount;
+      refs.range.disabled = !masterFx[fx.id].on;
+    });
+  }
+
+  function rebuildMasterChain() {
+    if (!ctx) return;
+    masterInput.disconnect();
+    fxExtraNodes.forEach(function (n) { try { n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} });
+    fxExtraNodes = [];
+    var chain = buildEffectChain(ctx);
+    if (chain) {
+      masterInput.connect(chain.input);
+      chain.output.connect(masterGain);
+      fxExtraNodes = chain.extraNodes;
+    } else {
+      masterInput.connect(masterGain);
+    }
+  }
+
+  function buildEffectChain(audioCtx) {
+    var chainInput = null, chainOutput = null;
+    var extraNodes = [];
+    FX_ORDER.forEach(function (fx) {
+      var state = masterFx[fx];
+      if (!state || !state.on) return;
+      var stage = buildStage(audioCtx, fx, state.amount / 100, extraNodes);
+      if (!chainInput) { chainInput = stage.input; chainOutput = stage.output; }
+      else { chainOutput.connect(stage.input); chainOutput = stage.output; }
+    });
+    if (!chainInput) return null;
+    return { input: chainInput, output: chainOutput, extraNodes: extraNodes };
+  }
+
+  // real-time granular pitch shifter - two overlapping delay lines whose read
+  // position sweeps forward or backward each grain (the classic "doppler"
+  // trick), crossfaded with triangular windows so grains blend without clicks
+  function buildPitchShifter(audioCtx, semitones, extraNodes) {
+    var input = audioCtx.createGain();
+    var output = audioCtx.createGain();
+
+    if (Math.abs(semitones) < 0.05) {
+      input.connect(output);
+      return { input: input, output: output };
+    }
+
+    var ratio = Math.pow(2, semitones / 12);
+    var grainTime = 0.08; // 80ms grains - short enough to track melodies, smooth enough to not buzz
+    var sweep = grainTime * (ratio - 1); // total delay-time swing per grain
+    var rampFreq = 1 / grainTime;
+
+    var delayA = audioCtx.createDelay(grainTime * 3);
+    var delayB = audioCtx.createDelay(grainTime * 3);
+    var gainA = audioCtx.createGain(); gainA.gain.value = 0;
+    var gainB = audioCtx.createGain(); gainB.gain.value = 0;
+
+    var rampA = audioCtx.createOscillator(); rampA.type = "sawtooth"; rampA.frequency.value = rampFreq;
+    var rampB = audioCtx.createOscillator(); rampB.type = "sawtooth"; rampB.frequency.value = rampFreq;
+    var rampGainA = audioCtx.createGain(); rampGainA.gain.value = -sweep / 2;
+    var rampGainB = audioCtx.createGain(); rampGainB.gain.value = -sweep / 2;
+    var offsetA = audioCtx.createConstantSource(); offsetA.offset.value = grainTime / 2 + sweep / 2;
+    var offsetB = audioCtx.createConstantSource(); offsetB.offset.value = grainTime / 2 + sweep / 2;
+
+    rampA.connect(rampGainA); rampGainA.connect(delayA.delayTime); offsetA.connect(delayA.delayTime);
+    rampB.connect(rampGainB); rampGainB.connect(delayB.delayTime); offsetB.connect(delayB.delayTime);
+
+    // triangular 0->1->0 fade window per grain, built from the same sawtooth shape
+    var winCurve = new Float32Array(256);
+    for (var i = 0; i < 256; i++) { var x = (i / 255) * 2 - 1; winCurve[i] = 1 - Math.abs(x); }
+    var winA = audioCtx.createOscillator(); winA.type = "sawtooth"; winA.frequency.value = rampFreq;
+    var winB = audioCtx.createOscillator(); winB.type = "sawtooth"; winB.frequency.value = rampFreq;
+    var shaperA = audioCtx.createWaveShaper(); shaperA.curve = winCurve;
+    var shaperB = audioCtx.createWaveShaper(); shaperB.curve = winCurve;
+    winA.connect(shaperA); shaperA.connect(gainA.gain);
+    winB.connect(shaperB); shaperB.connect(gainB.gain);
+
+    input.connect(delayA); delayA.connect(gainA); gainA.connect(output);
+    input.connect(delayB); delayB.connect(gainB); gainB.connect(output);
+
+    // offset the B line by half a grain so the two windows alternate, one
+    // always fading in as the other fades out
+    var now = audioCtx.currentTime;
+    rampA.start(now); winA.start(now); offsetA.start(now);
+    rampB.start(now + grainTime / 2); winB.start(now + grainTime / 2); offsetB.start(now);
+
+    extraNodes.push(rampA, rampB, winA, winB, offsetA, offsetB);
+    return { input: input, output: output };
+  }
+
+  function buildStage(audioCtx, fx, intensity, extraNodes) {
+    var input = audioCtx.createGain();
+    var output = audioCtx.createGain();
+    var dry = audioCtx.createGain(); dry.gain.value = 1 - intensity;
+    var wet = audioCtx.createGain(); wet.gain.value = intensity;
+    input.connect(dry); dry.connect(output);
+    var procIn, procOut;
+
+    if (fx === "muffle") {
+      var lp = audioCtx.createBiquadFilter(); lp.type = "lowpass";
+      lp.frequency.value = 8000 - intensity * 7300;
+      procIn = lp; procOut = lp;
+    } else if (fx === "crush") {
+      var shaper = audioCtx.createWaveShaper();
+      var drive = 2 + intensity * 22;
+      var curve = new Float32Array(256);
+      for (var i = 0; i < 256; i++) { var x = (i / 255) * 2 - 1; curve[i] = Math.tanh(x * drive) * 0.9; }
+      shaper.curve = curve; shaper.oversample = "2x";
+      procIn = shaper; procOut = shaper;
+    } else if (fx === "bitcrush") {
+      var crusher = audioCtx.createWaveShaper();
+      var steps = Math.max(2, Math.round(16 - intensity * 14));
+      var bcCurve = new Float32Array(256);
+      for (var k = 0; k < 256; k++) { var xv = (k / 255) * 2 - 1; bcCurve[k] = Math.round(xv * steps) / steps; }
+      crusher.curve = bcCurve; crusher.oversample = "none";
+      procIn = crusher; procOut = crusher;
+    } else if (fx === "flanger") {
+      var fDelay = audioCtx.createDelay();
+      fDelay.delayTime.value = 0.003 + intensity * 0.006;
+      var lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 0.15 + intensity * 0.6;
+      var lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.002 + intensity * 0.004;
+      lfo.connect(lfoGain); lfoGain.connect(fDelay.delayTime);
+      var fFeedback = audioCtx.createGain(); fFeedback.gain.value = intensity * 0.5;
+      fDelay.connect(fFeedback); fFeedback.connect(fDelay);
+      lfo.start(); extraNodes.push(lfo);
+      procIn = fDelay; procOut = fDelay;
+    } else if (fx === "pitchshift") {
+      var semitones = (intensity - 0.5) * 24; // 0% = -12st, 50% = no shift, 100% = +12st
+      var shifter = buildPitchShifter(audioCtx, semitones, extraNodes);
+      procIn = shifter.input; procOut = shifter.output;
+    } else if (fx === "echo") {
+      var delay = audioCtx.createDelay(1);
+      delay.delayTime.value = 0.18 + intensity * 0.25;
+      var feedback = audioCtx.createGain(); feedback.gain.value = 0.2 + intensity * 0.45;
+      delay.connect(feedback); feedback.connect(delay);
+      procIn = delay; procOut = delay;
+    } else if (fx === "reverb") {
+      var convolver = audioCtx.createConvolver();
+      convolver.buffer = getImpulseResponse(audioCtx);
+      procIn = convolver; procOut = convolver;
+    }
+
+    input.connect(procIn); procOut.connect(wet); wet.connect(output);
+    return { input: input, output: output };
+  }
+
+  function getImpulseResponse(audioCtx) {
+    if (impulseCache) return impulseCache;
+    var duration = 2.2, decay = 3;
+    var rate = audioCtx.sampleRate;
+    var length = Math.floor(rate * duration);
+    var impulse = audioCtx.createBuffer(2, length, rate);
+    for (var ch = 0; ch < 2; ch++) {
+      var data = impulse.getChannelData(ch);
+      for (var i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+    impulseCache = impulse;
+    return impulse;
+  }
+
+  /* ===================== track model ===================== */
+
+  function makeTrack(instrumentId) {
+    trackIdCounter++;
+    var inst = INSTRUMENTS[instrumentId];
+    var color = TRACK_COLORS[(trackIdCounter - 1) % TRACK_COLORS.length];
+    var track = {
+      id: "t" + trackIdCounter,
+      name: inst.label,
+      instrumentId: instrumentId,
+      color: color,
+      muted: false,
+      solo: false,
+      volume: 0.85,
+      octaveShift: 0,
+      gainNode: null
+    };
+    if (inst.kind === "melodic") {
+      track.notes = []; // array of { step, midi, length }
+    } else {
+      track.pattern = {};
+      DRUM_ROWS.forEach(function (r) { track.pattern[r.id] = new Array(stepsPerBar).fill(false); });
+    }
+    if (ctx) ensureTrackNode(track);
+    return track;
+  }
+
+  function addTrack(instrumentId) {
+    var track = makeTrack(instrumentId);
+    tracks.push(track);
+    selectedTrackId = track.id;
+    renderTrackList();
+    renderEditor();
+  }
+
+  function removeTrack(id) {
+    var idx = tracks.findIndex(function (t) { return t.id === id; });
+    if (idx === -1) return;
+    var track = tracks[idx];
+    if (track.gainNode) { try { track.gainNode.disconnect(); } catch (e) {} }
+    tracks.splice(idx, 1);
+    if (selectedTrackId === id) selectedTrackId = tracks.length ? tracks[0].id : null;
+    renderTrackList();
+    renderEditor();
+  }
+
+  function selectTrack(id) {
+    selectedTrackId = id;
+    renderTrackList();
+    renderEditor();
+  }
+
+  function getTrack(id) { return tracks.find(function (t) { return t.id === id; }); }
+  function selectedTrack() { return getTrack(selectedTrackId); }
+
+  /* ===================== default tracks ===================== */
+
+  addTrack("grand_piano");
+  addTrack("drums");
+  selectedTrackId = tracks[0].id;
+
+  /* ===================== track list rendering ===================== */
+
+  function renderTrackList() {
+    trackListEl.innerHTML = "";
+    tracks.forEach(function (track) {
+      var inst = INSTRUMENTS[track.instrumentId];
+      var row = document.createElement("div");
+      row.className = "track-row" + (track.id === selectedTrackId ? " selected" : "");
+
+      var color = document.createElement("span");
+      color.className = "track-color";
+      color.style.background = track.color;
+
+      var info = document.createElement("div");
+      info.className = "track-info";
+      info.innerHTML =
+        '<div class="track-name">' + inst.icon + ' ' + track.name + '</div>' +
+        '<div class="track-inst">' + inst.label + '</div>';
+
+      var muteBtn = document.createElement("button");
+      muteBtn.className = "track-mini-btn mute" + (track.muted ? " active" : "");
+      muteBtn.textContent = "M";
+      muteBtn.title = "mute";
+      muteBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        track.muted = !track.muted;
+        updateTrackGain(track);
+        renderTrackList();
+      });
+
+      var soloBtn = document.createElement("button");
+      soloBtn.className = "track-mini-btn solo" + (track.solo ? " active" : "");
+      soloBtn.textContent = "S";
+      soloBtn.title = "solo";
+      soloBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        track.solo = !track.solo;
+        tracks.forEach(updateTrackGain);
+        renderTrackList();
+      });
+
+      var vol = document.createElement("input");
+      vol.type = "range"; vol.min = 0; vol.max = 100; vol.value = Math.round(track.volume * 100);
+      vol.className = "track-vol";
+      vol.title = "volume";
+      vol.addEventListener("click", function (e) { e.stopPropagation(); });
+      vol.addEventListener("input", function () {
+        track.volume = parseInt(vol.value, 10) / 100;
+        updateTrackGain(track);
+      });
+
+      var delBtn = document.createElement("button");
+      delBtn.className = "track-mini-btn";
+      delBtn.textContent = "\u00d7";
+      delBtn.title = "delete track";
+      delBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        removeTrack(track.id);
+      });
+
+      row.appendChild(color);
+      row.appendChild(info);
+      row.appendChild(muteBtn);
+      row.appendChild(soloBtn);
+      row.appendChild(vol);
+      row.appendChild(delBtn);
+
+      row.addEventListener("click", function () { selectTrack(track.id); });
+      trackListEl.appendChild(row);
+    });
+
+    var addBtn = document.createElement("button");
+    addBtn.className = "add-track-btn";
+    addBtn.textContent = "+ add track";
+    addBtn.addEventListener("click", function () { openModal(addTrackModal); });
+    trackListEl.appendChild(addBtn);
+  }
+
+  /* ===================== instrument picker (add track modal) ===================== */
+
+  INSTRUMENT_ORDER.forEach(function (id) {
+    var inst = INSTRUMENTS[id];
+    var card = document.createElement("div");
+    card.className = "instrument-card";
+    card.innerHTML = '<span class="icon">' + inst.icon + '</span><span class="label">' + inst.label + '</span>';
+    card.addEventListener("click", function () {
+      addTrack(id);
+      closeModal(addTrackModal);
+    });
+    instrumentGrid.appendChild(card);
+  });
+
+  /* ===================== editor rendering ===================== */
+
+  function renderEditor() {
+    var track = selectedTrack();
+    editorControlsEl.innerHTML = "";
+    editorGridWrapEl.innerHTML = "";
+
+    if (!track) {
+      editorTitleEl.textContent = "no track selected";
+      return;
+    }
+
+    var inst = INSTRUMENTS[track.instrumentId];
+    editorTitleEl.textContent = inst.icon + " " + track.name;
+
+    if (inst.kind === "drums") {
+      renderDrumGrid(track);
+    } else {
+      renderPianoRoll(track);
+    }
+  }
+
+  function renderPianoRoll(track) {
+    var inst = INSTRUMENTS[track.instrumentId];
+
+    var octDown = document.createElement("button");
+    octDown.className = "clear-pattern-btn"; octDown.textContent = "\u2212 octave";
+    octDown.addEventListener("click", function () { track.octaveShift--; renderEditor(); });
+    var octUp = document.createElement("button");
+    octUp.className = "clear-pattern-btn"; octUp.textContent = "+ octave";
+    octUp.addEventListener("click", function () { track.octaveShift++; renderEditor(); });
+
+    var clearBtn = document.createElement("button");
+    clearBtn.className = "clear-pattern-btn"; clearBtn.textContent = "clear";
+    clearBtn.addEventListener("click", function () { track.notes = []; renderEditor(); });
+
+    editorControlsEl.appendChild(octDown);
+    editorControlsEl.appendChild(octUp);
+    editorControlsEl.appendChild(clearBtn);
+
+    var baseMidi = 12 * (inst.baseOctave + 1 + track.octaveShift);
+    var rowCount = 24; // 2 octaves
+    var steps = totalSteps();
+
+    var roll = document.createElement("div");
+    roll.className = "piano-roll";
+
+    var keysCol = document.createElement("div");
+    keysCol.className = "roll-keys";
+    var rowsCol = document.createElement("div");
+    rowsCol.className = "roll-rows";
+
+    var rowCellsByMidi = {}; // midi -> [cellEl, ...] indexed by step
+
+    for (var r = 0; r < rowCount; r++) {
+      var midi = baseMidi + (rowCount - 1 - r);
+      var black = isBlackKey(midi);
+      var hue = hueForMidi(midi);
+
+      var keyEl = document.createElement("div");
+      keyEl.className = "roll-key " + (black ? "black" : "white");
+      keyEl.innerHTML = '<span class="roll-key-dot" style="background:hsl(' + hue + ',72%,58%)"></span>' + noteName(midi);
+      keysCol.appendChild(keyEl);
+
+      var rowEl = document.createElement("div");
+      rowEl.className = "roll-row" + (black ? " black-row" : "");
+
+      var cellsForRow = [];
+      for (var s = 0; s < steps; s++) {
+        var cell = document.createElement("div");
+        cell.className = "roll-cell" + (s % stepsPerBar === 0 ? " bar-start" : "");
+        cell.dataset.step = s;
+        cell.dataset.midi = midi;
+        rowEl.appendChild(cell);
+        cellsForRow.push(cell);
+      }
+      rowsCol.appendChild(rowEl);
+      rowCellsByMidi[midi] = cellsForRow;
+    }
+
+    roll.appendChild(keysCol);
+    roll.appendChild(rowsCol);
+    editorGridWrapEl.appendChild(roll);
+
+    // (re)draws the cells for a single pitch row from the current note list -
+    // called on every drag update so we only ever repaint the row(s) that changed
+    function paintRow(midi) {
+      var cells = rowCellsByMidi[midi];
+      if (!cells) return;
+      var hue = hueForMidi(midi);
+      for (var i = 0; i < cells.length; i++) {
+        cells[i].className = "roll-cell" + (i % stepsPerBar === 0 ? " bar-start" : "");
+        cells[i].style.background = "";
+        cells[i].innerHTML = "";
+      }
+      track.notes.forEach(function (n) {
+        if (n.midi !== midi) return;
+        for (var s = n.step; s < n.step + n.length && s < cells.length; s++) {
+          var c = cells[s];
+          c.classList.add("active");
+          c.style.background = "hsl(" + hue + ",72%,58%)";
+          if (s === n.step) c.classList.add("note-start");
+          if (s === n.step + n.length - 1) c.classList.add("note-end");
+        }
+        var endIdx = n.step + n.length - 1;
+        if (endIdx >= 0 && endIdx < cells.length) {
+          var handle = document.createElement("span");
+          handle.className = "note-resize-handle";
+          handle.title = "drag to change note length";
+          handle.addEventListener("pointerdown", function (ev) {
+            ev.stopPropagation();
+            ev.preventDefault();
+            dragState = { mode: "resize", track: track, note: n };
+            document.body.classList.add("roll-dragging");
+          });
+          cells[endIdx].appendChild(handle);
+        }
+      });
+    }
+
+    Object.keys(rowCellsByMidi).forEach(function (m) { paintRow(parseInt(m, 10)); });
+
+    Object.keys(rowCellsByMidi).forEach(function (m) {
+      rowCellsByMidi[m].forEach(function (cell) {
+        cell.addEventListener("pointerdown", function (e) {
+          var step = parseInt(cell.dataset.step, 10);
+          var midi = parseInt(cell.dataset.midi, 10);
+          var existing = noteAt(track, step, midi);
+          document.body.classList.add("roll-dragging");
+          e.preventDefault();
+
+          if (existing) {
+            // click-and-hold to drag it along the row; a plain click with no
+            // movement removes it (handled in the pointerup listener below)
+            dragState = { mode: "move", track: track, note: existing, grabOffset: step - existing.step, moved: false, origStep: existing.step, origMidi: existing.midi };
+            return;
+          }
+
+          // new notes always start by reaching for the end of the grid, then
+          // immediately snap back to butt up against whatever note is already
+          // sitting further along the row - so the roll always reads as one
+          // unbroken line with no gaps between notes
+          var n = addNote(track, step, midi, totalSteps() - step);
+          clampNoteToGrid(n);
+          resolveOverlaps(track, n);
+          paintRow(midi);
+          playVoice(track, midi, getCtx().currentTime + 0.01, stepDuration() * 3, 0.75);
+          dragState = { mode: "create", track: track, note: n, anchorStep: step, midi: midi };
+        });
+      });
+    });
+
+    rollHandles = { paintRow: paintRow, track: track };
+  }
+
+  function renderDrumGrid(track) {
+    var clearBtn = document.createElement("button");
+    clearBtn.className = "clear-pattern-btn"; clearBtn.textContent = "clear";
+    clearBtn.addEventListener("click", function () {
+      DRUM_ROWS.forEach(function (r) { track.pattern[r.id].fill(false); });
+      renderEditor();
+    });
+    editorControlsEl.appendChild(clearBtn);
+
+    var wrap = document.createElement("div");
+    wrap.className = "drum-machine daw-drum-grid";
+
+    DRUM_ROWS.forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "drum-row";
+      row.innerHTML = '<div class="drum-row-label"><span class="channel-color" style="background:' + track.color + '"></span>' + r.label + '</div>';
+      var grid = document.createElement("div");
+      grid.className = "step-grid";
+      grid.style.setProperty("--fx-color", track.color);
+
+      for (var s = 0; s < stepsPerBar; s++) {
+        var cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "step-cell";
+        cell.dataset.step = s;
+        cell.style.setProperty("--fx-color", track.color);
+        if (track.pattern[r.id][s]) cell.classList.add("active");
+        (function (cellEl, rowId, stepIdx) {
+          cellEl.addEventListener("click", function () {
+            var on = !track.pattern[rowId][stepIdx];
+            track.pattern[rowId][stepIdx] = on;
+            cellEl.classList.toggle("active", on);
+            if (on) triggerDrum(track, rowId, getCtx().currentTime + 0.01);
+          });
+        })(cell, r.id, s);
+        grid.appendChild(cell);
+      }
+      row.appendChild(grid);
+      wrap.appendChild(row);
+    });
+
+    editorGridWrapEl.appendChild(wrap);
+  }
+
+  /* ===================== auto create ===================== */
+
+  var autoCreateBtn = document.getElementById("autoCreateBtn");
+
+  // major and natural minor - the auto-composer picks a mode each
+  // generation instead of always writing in the same major scale
+  var SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+  var MINOR_SCALE_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+  var currentScale = SCALE_INTERVALS;
+  var ROOT_PC_CHOICES = [0, 2, 3, 5, 7, 10]; // C, D, Eb, F, G, Bb
+
+  // a much wider pool of diatonic degree progressions (0-indexed scale
+  // degrees) spanning pop, neo-soul, and minor-key moods - two are picked
+  // per song (verse move + a different chorus move) instead of reusing
+  // one 4-chord loop the whole way through
+  var PROGRESSIONS = [
+    [0, 5, 3, 4],
+    [1, 4, 0, 3],
+    [5, 3, 0, 4],
+    [0, 4, 1, 5],
+    [3, 4, 5, 0],
+    [0, 3, 4, 4],
+    [5, 4, 0, 0],
+    [0, 2, 3, 4],
+    [1, 5, 4, 0],
+    [0, 0, 5, 4],
+    [2, 5, 3, 4],
+    [0, 4, 5, 3],
+    [0, 5, 4, 3],
+    [5, 0, 1, 4]
+  ];
+
+  function degreeOffset(degree) {
+    var oct = Math.floor(degree / 7);
+    var idx = ((degree % 7) + 7) % 7;
+    return currentScale[idx] + oct * 12;
+  }
+  function foldIntoRange(v, low, high) {
+    while (v < low) v += 12;
+    while (v > high) v -= 12;
+    return v;
+  }
+  function uniqueSorted(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (v) { if (!seen[v]) { seen[v] = true; out.push(v); } });
+    out.sort(function (a, b) { return a - b; });
+    return out;
+  }
+
+  // decides how a track should behave in the auto-generated arrangement
+  function trackRole(instrumentId) {
+    if (instrumentId === "bass") return "bass";
+    var chordInstruments = ["grand_piano", "electric_piano", "acoustic_guitar", "electric_guitar", "strings", "brass", "warm_pad", "vibraphone"];
+    if (chordInstruments.indexOf(instrumentId) !== -1) return "chord";
+    return "lead"; // synth_lead, flute, saxophone, marimba, kalimba, ukulele, steel_drum, glockenspiel, panflute
+  }
+
+  function addBassBar(track, bar, rootMidi, chordMidis, energy) {
+    var barStart = bar * stepsPerBar;
+    energy = energy || 1;
+    var style = Math.random();
+    if (style < 0.4) {
+      // root held, then a fifth/fourth pickup into the next bar
+      addNote(track, barStart, rootMidi, 12, 0.85 * energy);
+      var pickup = rootMidi + (Math.random() < 0.5 ? 7 : 5);
+      addNote(track, barStart + 12, pickup, 4, 0.6 * energy);
+    } else if (style < 0.7) {
+      // walking bass - a chord tone on every beat, keeps the harmony moving,
+      // accented on beat one like a real bassist leaning into the downbeat
+      var pool = (chordMidis && chordMidis.length) ? chordMidis : [rootMidi];
+      [0, 4, 8, 12].forEach(function (b, i) {
+        var midi = i === 0 ? rootMidi : pool[Math.floor(Math.random() * pool.length)];
+        addNote(track, barStart + b, midi, 4, (i === 0 ? 0.85 : 0.62 + Math.random() * 0.1) * energy);
+      });
+    } else {
+      // syncopated jab - root held short, then an accented octave kick off the beat
+      addNote(track, barStart, rootMidi, 6, 0.75 * energy);
+      addNote(track, barStart + 6, rootMidi + 12, 2, 0.9 * energy);
+      addNote(track, barStart + 10, rootMidi + (Math.random() < 0.5 ? 7 : 5), 6, 0.65 * energy);
+    }
+  }
+
+  function addChordBar(track, bar, chordMidis, energy) {
+    var barStart = bar * stepsPerBar;
+    energy = energy || 1;
+    var voiced = chordMidis.slice();
+    // occasional first-inversion voicing - drop the root up an octave so
+    // not every chord sits in the same closed position
+    if (voiced.length > 1 && Math.random() < 0.3) {
+      voiced = voiced.slice(1).concat([voiced[0] + 12]);
+    }
+    var style = Math.random();
+    if (style < 0.5) {
+      // sustained block chord, held the whole bar
+      voiced.forEach(function (m) { addNote(track, barStart, m, stepsPerBar - 1, 0.62 * energy); });
+    } else if (style < 0.78) {
+      // broken into two hits, the second slightly softer than the first
+      voiced.forEach(function (m) {
+        addNote(track, barStart, m, stepsPerBar / 2 - 1, 0.68 * energy);
+        addNote(track, barStart + stepsPerBar / 2, m, stepsPerBar / 2 - 1, 0.55 * energy);
+      });
+    } else {
+      // syncopated stabs - short punchy chord hits off the beat, accented
+      [0, 6, 8, 14].forEach(function (h, i) {
+        voiced.forEach(function (m) { addNote(track, barStart + h, m, 2, (i === 0 || i === 2 ? 0.78 : 0.6) * energy); });
+      });
+    }
+  }
+
+  var LEAD_PATTERNS = [
+    [0, 3, 6, 10],
+    [2, 5, 8, 13],
+    [0, 4, 8, 12],
+    [1, 6, 9, 14],
+    [0, 2, 5, 8, 11, 14],
+    [3, 7, 10, 12],
+    [0, 6, 9]
+  ];
+
+  // invents a short rhythmic motif once per track - a fixed rhythm plus a
+  // relative position into the (chordMidis + octave-up) pool for each hit.
+  // Reusing this same shape bar-to-bar, just re-pointed at each new chord,
+  // is what makes the melody sound like a written phrase instead of a new
+  // random noodle every single bar.
+  function makeMotif() {
+    var pattern = LEAD_PATTERNS[Math.floor(Math.random() * LEAD_PATTERNS.length)];
+    return pattern.map(function (step) {
+      return {
+        step: step,
+        poolIdx: Math.floor(Math.random() * 6), // position into the extended chord-tone pool
+        len: 2 + Math.floor(Math.random() * 3)
+      };
+    });
+  }
+
+  function addLeadBar(track, bar, chordMidis, motif) {
+    var barStart = bar * stepsPerBar;
+    motif = motif || makeMotif();
+    var pool = chordMidis.concat(chordMidis.map(function (m) { return m + 12; }));
+    // every 3rd time through, flip the phrase's contour (mirror it) so the
+    // motif develops instead of repeating identically forever
+    var mirrored = (bar % 3 === 2);
+    motif.forEach(function (hit) {
+      var idx = mirrored ? (pool.length - 1 - hit.poolIdx) : hit.poolIdx;
+      idx = ((idx % pool.length) + pool.length) % pool.length;
+      var midi = pool[idx];
+      var len = hit.len;
+      if (hit.step + len > stepsPerBar) len = stepsPerBar - hit.step;
+      var accent = (hit.step % 8 === 0) ? 0.88 : 0.68; // lean into strong beats
+      addNote(track, barStart + hit.step, midi, len, accent);
+    });
+  }
+
+  // steady rolling arpeggio through the chord tones - great for kalimba,
+  // steel drum, marimba, glockenspiel: gives the auto song a bright,
+  // rippling texture instead of every "lead" track playing the same kind
+  // of sparse melodic phrase
+  function addArpBar(track, bar, chordMidis) {
+    var barStart = bar * stepsPerBar;
+    var pool = chordMidis.concat(chordMidis.map(function (m) { return m + 12; }));
+    var descending = Math.random() < 0.5;
+    var seq = descending ? pool.slice().reverse() : pool.slice();
+    var step = 0, i = 0;
+    var subdiv = Math.random() < 0.5 ? 2 : 4; // 8th or 16th feel
+    while (step < stepsPerBar) {
+      var midi = seq[i % seq.length];
+      var len = Math.min(subdiv, stepsPerBar - step);
+      var accent = (step % 8 === 0) ? 0.75 : 0.55; // downbeats of each phrase pop slightly
+      addNote(track, barStart + step, midi, len, accent);
+      step += subdiv;
+      i++;
+    }
+  }
+
+  // several genuinely different feels to draw from, instead of one groove
+  // shape with light randomization on top - each writes its own kick/
+  // snare/hihat layout, then a shared percussion pass adds shaker/tambourine
+  var GROOVE_TEMPLATES = [
+    // laid-back head-nodder
+    function (p) {
+      p.kick[0] = true; p.kick[10] = true;
+      if (Math.random() < 0.5) p.kick[6] = true;
+      p.snare[4] = true; p.snare[12] = true;
+      for (var s = 0; s < stepsPerBar; s += 2) p.hihat[s] = true;
+      if (Math.random() < 0.4) p.hihat[15] = true;
+      if (Math.random() < 0.35) p.clap[12] = true;
+    },
+    // four-on-the-floor - steady dance pulse
+    function (p) {
+      p.kick[0] = true; p.kick[4] = true; p.kick[8] = true; p.kick[12] = true;
+      p.snare[4] = true; p.snare[12] = true;
+      for (var s = 0; s < stepsPerBar; s += 2) p.hihat[s] = true;
+      if (Math.random() < 0.5) p.clap[4] = p.clap[12] = true;
+    },
+    // boom-bap - syncopated kick, sparser hats
+    function (p) {
+      p.kick[0] = true; p.kick[7] = true;
+      if (Math.random() < 0.6) p.kick[10] = true;
+      p.snare[4] = true; p.snare[12] = true;
+      [0, 3, 6, 9, 12, 15].forEach(function (s) { p.hihat[s] = true; });
+      if (Math.random() < 0.3) p.snare[14] = true; // ghost snare
+    },
+    // reggae one-drop - kick and snare land together on beat 3
+    function (p) {
+      p.kick[8] = true;
+      p.snare[8] = true;
+      if (Math.random() < 0.4) p.snare[4] = true;
+      [2, 6, 10, 14].forEach(function (s) { p.hihat[s] = true; });
+    },
+    // half-time - spacious, slow-feeling backbeat
+    function (p) {
+      p.kick[0] = true;
+      if (Math.random() < 0.5) p.kick[9] = true;
+      p.snare[8] = true;
+      for (var s = 0; s < stepsPerBar; s += 2) p.hihat[s] = true;
+      if (Math.random() < 0.3) p.clap[8] = true;
+    }
+  ];
+
+  function generateDrumGroove(track) {
+    DRUM_ROWS.forEach(function (r) { track.pattern[r.id] = new Array(stepsPerBar).fill(false); });
+
+    var groove = GROOVE_TEMPLATES[Math.floor(Math.random() * GROOVE_TEMPLATES.length)];
+    groove(track.pattern);
+
+    // tropical percussion texture - shaker rides the offbeats, tambourine
+    // accents the turnaround, giving the groove a warm, summery lilt
+    if (Math.random() < 0.6) {
+      for (var sh = 2; sh < stepsPerBar; sh += 4) track.pattern.shaker[sh] = true;
+    }
+    if (Math.random() < 0.45) track.pattern.tambourine[8] = true;
+    if (Math.random() < 0.3) track.pattern.tambourine[14] = true;
+  }
+
+  // curated fx combos that suit a bright, warm-weather palette - picked
+  // at random each generation so back-to-back songs don't all sound like
+  // they're running through the same signal chain
+  function applyAutoFx() {
+    EFFECTS.forEach(function (fx) { masterFx[fx.id].on = false; });
+    masterFx.reverb.on = true;
+    masterFx.reverb.amount = 18 + Math.floor(Math.random() * 18);
+    if (Math.random() < 0.5) { masterFx.echo.on = true; masterFx.echo.amount = 12 + Math.floor(Math.random() * 22); }
+    if (Math.random() < 0.35) { masterFx.flanger.on = true; masterFx.flanger.amount = 18 + Math.floor(Math.random() * 25); }
+    if (Math.random() < 0.2) { masterFx.muffle.on = true; masterFx.muffle.amount = 8 + Math.floor(Math.random() * 15); }
+    rebuildMasterChain();
+    syncFxUI();
+  }
+
+  function generateSong() {
+    if (!tracks.length) return;
+    if (isPlaying) stopAll();
+
+    currentScale = Math.random() < 0.4 ? MINOR_SCALE_INTERVALS : SCALE_INTERVALS;
+    var rootPc = ROOT_PC_CHOICES[Math.floor(Math.random() * ROOT_PC_CHOICES.length)];
+    // two different progressions - one for the first half of the song, a
+    // different one for the second - so a longer piece actually moves
+    // somewhere instead of looping one 4-bar idea the whole way through
+    var progA = PROGRESSIONS[Math.floor(Math.random() * PROGRESSIONS.length)];
+    var otherProgs = PROGRESSIONS.filter(function (p) { return p !== progA; });
+    var progB = otherProgs[Math.floor(Math.random() * otherProgs.length)];
+    var halfBar = Math.floor(bars / 2);
+
+    // a real key change (whole-step up) for the final section of longer
+    // songs, like a pop song lifting into its last chorus - transposes the
+    // actual notes, so it's audible every time, not just an fx toggle
+    var keyChangeBar = bars >= 8 ? Math.floor(bars * 0.75) : null;
+    var keyChangeStep = keyChangeBar !== null ? keyChangeBar * stepsPerBar : null;
+
+    pitchEvents = [];
+    if (keyChangeStep !== null) {
+      // a short pitch-shift riser leading straight into the key change -
+      // this is the auto-composer actually using the pitch shift fx live,
+      // mid-song, rather than it only ever being a static dial
+      pitchEvents.push({ stepAt: Math.max(0, keyChangeStep - 3), semitones: 2.5, holdSteps: 3 });
+    }
+
+    tracks.forEach(function (track) {
+      var inst = INSTRUMENTS[track.instrumentId];
+      if (inst.kind === "drums") { generateDrumGroove(track); return; }
+
+      track.notes = [];
+      var trackBase = 12 * (inst.baseOctave + 1 + track.octaveShift);
+      var role = trackRole(track.instrumentId);
+      // each lead track independently decides between a phrase-based
+      // melody and a rolling arpeggio - so a piano+kalimba+sax song has
+      // three genuinely different lead behaviors instead of one pattern
+      // shape reused everywhere
+      var useArp = role === "lead" && Math.random() < 0.45;
+      var motif = (role === "lead" && !useArp) ? makeMotif() : null;
+      // simple arrangement build - some non-bass tracks hold out for the
+      // first bar so the song has an entrance instead of every instrument
+      // slamming in on beat one
+      var entersAtBar = (bars >= 4 && role !== "bass" && Math.random() < 0.3) ? 1 : 0;
+
+      for (var bar = 0; bar < bars; bar++) {
+        if (bar < entersAtBar) continue;
+        var progression = bar < halfBar ? progA : progB;
+        // second-half section reads as the "chorus" - a touch more energy
+        // in the dynamics than the first-half "verse"
+        var energy = bar < halfBar ? 0.85 : 1.0;
+        var degree = progression[bar % progression.length];
+        var offsets = [0, 2, 4, 6].map(function (k) { return degreeOffset(degree + k); });
+        var transpose = (keyChangeStep !== null && bar * stepsPerBar >= keyChangeStep) ? 2 : 0;
+        var chordMidis = uniqueSorted(offsets.map(function (off) {
+          return trackBase + foldIntoRange(rootPc + off, 0, 23) + transpose;
+        }));
+
+        if (role === "bass") addBassBar(track, bar, chordMidis[0], chordMidis, energy);
+        else if (role === "chord") addChordBar(track, bar, chordMidis, energy);
+        else if (useArp) addArpBar(track, bar, chordMidis);
+        else addLeadBar(track, bar, chordMidis, motif);
+      }
+    });
+
+    // a little groove variety alongside the melodic variety - occasionally
+    // give the song some swing instead of always being dead straight
+    if (Math.random() < 0.35) {
+      swing = 12 + Math.floor(Math.random() * 22);
+      swingRange.value = swing;
+      swingVal.textContent = swing + "%";
+    }
+
+    applyAutoFx();
+
+    renderTrackList();
+    renderEditor();
+  }
+
+  autoCreateBtn.addEventListener("click", generateSong);
+
+  /* ===================== settings wiring ===================== */
+
+  settingsBtn.addEventListener("click", function () { openModal(settingsModal); });
+  fxBtn.addEventListener("click", function () { openModal(fxModal); });
+
+  bpmRange.addEventListener("input", function () {
+    bpm = parseInt(bpmRange.value, 10);
+    bpmVal.textContent = bpm + " bpm";
+    updateTransportInfo();
+  });
+  barsSelect.addEventListener("change", function () {
+    bars = parseInt(barsSelect.value, 10);
+    updateTransportInfo();
+    renderEditor();
+  });
+  swingRange.addEventListener("input", function () {
+    swing = parseInt(swingRange.value, 10);
+    swingVal.textContent = swing + "%";
+  });
+  masterVolRange.addEventListener("input", function () {
+    var v = parseInt(masterVolRange.value, 10);
+    masterVolVal.textContent = v + "%";
+    if (masterGain) masterGain.gain.value = v / 100;
+  });
+  loopToggle.addEventListener("change", function () { loop = loopToggle.checked; });
+
+  function updateTransportInfo() {
+    transportInfoEl.textContent = bpm + " bpm \u00b7 " + bars + " bars";
+  }
+
+  /* ===================== playback ===================== */
+
+  playBtn.addEventListener("click", function () { isPlaying ? stopAll() : play(); });
+  stopBtn.addEventListener("click", stopAll);
+
+  function play() {
+    var audioCtx = getCtx();
+    tracks.forEach(ensureTrackNode);
+
+    var sDur = stepDuration();
+    var startTime = audioCtx.currentTime + 0.08;
+    var steps = totalSteps();
+    var swingFrac = swing / 100;
+
+    activeNodes = [];
+
+    tracks.forEach(function (track) {
+      var anySolo = tracks.some(function (t) { return t.solo; });
+      var audible = !track.muted && (!anySolo || track.solo);
+      if (!audible) return;
+
+      var inst = INSTRUMENTS[track.instrumentId];
+      if (inst.kind === "melodic") {
+        track.notes.forEach(function (note) {
+          // held for its full drawn length, not just a single step - this is
+          // what keeps a dragged-out note sounding sustained instead of choppy
+          playVoice(track, note.midi, startTime + note.step * sDur, sDur * note.length, note.vel != null ? note.vel : 0.85);
+        });
+      } else {
+        for (var bar = 0; bar < bars; bar++) {
+          DRUM_ROWS.forEach(function (r) {
+            track.pattern[r.id].forEach(function (on, s) {
+              if (!on) return;
+              var swingOffset = (s % 2 === 1) ? sDur * swingFrac * 0.5 : 0;
+              triggerDrum(track, r.id, startTime + (bar * stepsPerBar + s) * sDur + swingOffset);
+            });
+          });
+        }
+      }
+    });
+
+    playTotalDuration = steps * sDur;
+    playStartCtxTime = startTime;
+    isPlaying = true;
+    playBtn.textContent = "\u275A\u275A";
+
+    schedulePitchEvents(startTime, sDur);
+    tickPlayhead();
+
+    if (loop) {
+      loopTimeoutId = setTimeout(function () { if (isPlaying) play(); }, playTotalDuration * 1000);
+    }
+  }
+
+  // fires the auto-composer's pitch-shift moments live during playback -
+  // this is what lets a song actually bend or key-change mid-play instead
+  // of pitch shift only ever being a fixed setting you dial in beforehand
+  function schedulePitchEvents(startTime, sDur) {
+    if (!pitchEvents.length) return;
+    pitchEvents.forEach(function (ev) {
+      var fireAt = startTime + ev.stepAt * sDur;
+      var offAt = fireAt + ev.holdSteps * sDur;
+      var delayMs = Math.max(0, (fireAt - ctx.currentTime) * 1000);
+      var offMs = Math.max(delayMs + 30, (offAt - ctx.currentTime) * 1000);
+      fxEventTimeouts.push(setTimeout(function () {
+        if (!isPlaying) return;
+        masterFx.pitchshift.on = true;
+        // 50 = no shift, each semitone is ~4.17 on the 0-100 amount scale
+        masterFx.pitchshift.amount = Math.max(0, Math.min(100, 50 + ev.semitones * (100 / 24)));
+        rebuildMasterChain();
+        syncFxUI();
+      }, delayMs));
+      fxEventTimeouts.push(setTimeout(function () {
+        if (!isPlaying) return;
+        masterFx.pitchshift.on = false;
+        rebuildMasterChain();
+        syncFxUI();
+      }, offMs));
+    });
+  }
+
+  function clearPitchEventTimeouts() {
+    fxEventTimeouts.forEach(function (id) { clearTimeout(id); });
+    fxEventTimeouts = [];
+  }
+
+  function stopAll() {
+    isPlaying = false;
+    if (loopTimeoutId) { clearTimeout(loopTimeoutId); loopTimeoutId = null; }
+    clearPitchEventTimeouts();
+    if (masterFx.pitchshift.on) { masterFx.pitchshift.on = false; rebuildMasterChain(); syncFxUI(); }
+    activeNodes.forEach(function (n) { try { n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} });
+    activeNodes = [];
+    playBtn.textContent = "\u25B6";
+    if (rafId) cancelAnimationFrame(rafId);
+    clearPlayheadHighlight();
+  }
+
+  function tickPlayhead() {
+    if (!isPlaying) return;
+    var audioCtx = getCtx();
+    var elapsed = audioCtx.currentTime - playStartCtxTime;
+    var sDur = stepDuration();
+    var steps = totalSteps();
+    var stepIdx = Math.floor((elapsed / sDur) % steps);
+    if (stepIdx < 0) stepIdx = 0;
+
+    var track = selectedTrack();
+    if (track) {
+      var inst = INSTRUMENTS[track.instrumentId];
+      var localStep = inst.kind === "drums" ? (stepIdx % stepsPerBar) : stepIdx;
+      var selector = inst.kind === "drums" ? ".step-cell" : ".roll-cell";
+      var cells = editorGridWrapEl.querySelectorAll(selector);
+      cells.forEach(function (cell) {
+        cell.classList.toggle("playing-col", parseInt(cell.dataset.step, 10) === localStep);
+      });
+    }
+
+    rafId = requestAnimationFrame(tickPlayhead);
+  }
+
+  function clearPlayheadHighlight() {
+    editorGridWrapEl.querySelectorAll(".playing-col").forEach(function (c) { c.classList.remove("playing-col"); });
+  }
+
+  /* ===================== init ===================== */
+
+  renderTrackList();
+  renderEditor();
+  updateTransportInfo();
+
+})();
+</script>
+</body>
+</html>

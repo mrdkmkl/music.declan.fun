@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>play music — music.declan.fun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="player-page">
+
+  <div class="player-top">
+    <a class="back-link" href="index.html">&larr; back</a>
+    <span class="brand">music.declan.fun</span>
+    <select class="song-select" id="songSelect" aria-label="choose a track"></select>
+  </div>
+
+  <div class="player-body">
+
+    <aside class="mixer" id="mixer">
+      <div class="mixer-head">
+        <div class="mixer-head-top">
+          <div>
+            <div class="title" id="mixerTitle">stems</div>
+            <div class="sub" id="mixerSub">looking for .wav files&hellip;</div>
+          </div>
+          <button class="expand-btn" id="expandBtn" aria-label="expand mixer" title="expand">&#8622;</button>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="stems">stems</button>
+          <button class="tab-btn" data-tab="effects">effects</button>
+        </div>
+      </div>
+
+      <div class="channels" id="channels" data-panel="stems">
+        <!-- channels injected below -->
+      </div>
+
+      <div class="channels effects-panel" id="effectsPanel" data-panel="effects" hidden>
+        <!-- effect rows injected below -->
+      </div>
+
+      <label class="pick-files-btn" id="pickFilesBtn">
+        choose .wav files from this computer
+        <input type="file" id="fileInput" accept="audio/wav,.wav" multiple hidden>
+      </label>
+      <div class="mixer-foot" id="mixerFoot">solo isolates a stem &middot; mute silences it &middot; fader sets its level</div>
+    </aside>
+
+    <section class="deck-side">
+      <div class="record-player">
+        <div class="record" id="record">
+          <div class="record-label">MUSIC</div>
+        </div>
+        <div class="tonearm" id="tonearm">
+          <div class="tonearm-needle"></div>
+        </div>
+      </div>
+
+      <div class="timeline-wrap">
+        <div class="timeline" id="timeline">
+          <div class="timeline-fill" id="timelineFill"></div>
+        </div>
+        <div class="timeline-time">
+          <span id="timeElapsed">0:00</span>
+          <span id="timeTotal">0:00</span>
+        </div>
+      </div>
+
+      <div class="transport">
+        <button class="transport-btn small" id="back10Btn" aria-label="back 10 seconds" disabled title="back 10s">&#8630;10</button>
+        <button class="transport-btn" id="playBtn" aria-label="play" disabled>&#9654;</button>
+        <button class="transport-btn" id="stopBtn" aria-label="stop" disabled>&#9632;</button>
+        <button class="transport-btn small" id="fwd10Btn" aria-label="forward 10 seconds" disabled title="forward 10s">10&#8631;</button>
+
+        <div class="transport-group">
+          speed
+          <input type="range" id="speedRange" min="0.5" max="1.5" step="0.05" value="1">
+          <span id="speedVal">1.00x</span>
+        </div>
+
+        <button class="reverse-toggle" id="reverseBtn" disabled>reverse</button>
+      </div>
+
+      <div class="load-status" id="statusLine">loading&hellip;</div>
+    </section>
+
+  </div>
+
+  <div class="legal-note">
+    all tracks belong to their respective artists/owners &mdash; this is a non-commercial fan project and I make $0 from it.
+    if you hold the rights to something here and want it taken down, email
+    <a href="mailto:contact@declan.fun">contact@declan.fun</a> and I'll remove it.
+  </div>
+</div>
+
+<script>
+(function () {
+
+  /* ===================== song catalog ===================== */
+  /* preset songs are looked up at stems/<song folder, lowercase>/<stem, lowercase>.wav */
+
+  var COLOR_CYCLE = ["var(--blue)", "var(--pink)", "var(--green)", "var(--amber)", "var(--purple)"];
+
+  var SONGS = [
+    { id: "boo",            label: "BOO (original)", folder: "BOO",            stemIds: ["bass", "drums", "other", "piano"] },
+    { id: "new-computers",  label: "New Computers",  folder: "New Computers",  stemIds: ["bass", "drums", "guitar"] },
+    { id: "untitled-3",     label: "Untitled #3",    folder: "Untitled #3",    stemIds: ["bass", "drums", "guitar", "other", "vocals"] },
+    { id: "untitled-6",     label: "Untitled #6",    folder: "Untitled #6",    stemIds: ["bass", "drums", "guitar", "other", "vocals"] },
+    { id: "local",          label: "local files (custom)", local: true }
+  ];
+
+  function candidatesFor(folder, stemId) {
+    // filenames are lowercase; the folder itself keeps its real-world casing
+    var literal = folder + "/" + stemId + ".wav";
+    var lowerFolder = folder.toLowerCase() + "/" + stemId + ".wav";
+    var hyphen = folder.replace(/\s+/g, "-").replace(/#/g, "") + "/" + stemId + ".wav";
+    var nospace = folder.replace(/\s+/g, "").replace(/#/g, "") + "/" + stemId + ".wav";
+    return ["stems/" + literal, "stems/" + lowerFolder, "stems/" + hyphen, "stems/" + nospace];
+  }
+
+  function buildStemDefs(song) {
+    return song.stemIds.map(function (id, i) {
+      return {
+        id: id,
+        name: id === "boo" ? "full mix" : id,
+        color: COLOR_CYCLE[i % COLOR_CYCLE.length],
+        candidates: candidatesFor(song.folder, id)
+      };
+    });
+  }
+
+  /* ===================== dom refs ===================== */
+
+  var songSelect = document.getElementById("songSelect");
+  var mixerTitle = document.getElementById("mixerTitle");
+  var channelsEl = document.getElementById("channels");
+  var mixerSub = document.getElementById("mixerSub");
+  var record = document.getElementById("record");
+  var playBtn = document.getElementById("playBtn");
+  var stopBtn = document.getElementById("stopBtn");
+  var speedRange = document.getElementById("speedRange");
+  var speedVal = document.getElementById("speedVal");
+  var reverseBtn = document.getElementById("reverseBtn");
+  var statusLine = document.getElementById("statusLine");
+  var fileInput = document.getElementById("fileInput");
+  var pickFilesBtn = document.getElementById("pickFilesBtn");
+  var expandBtn = document.getElementById("expandBtn");
+  var mixerEl = document.getElementById("mixer");
+  var effectsPanel = document.getElementById("effectsPanel");
+  var tonearm = document.getElementById("tonearm");
+  var timeline = document.getElementById("timeline");
+  var timelineFill = document.getElementById("timelineFill");
+  var timeElapsed = document.getElementById("timeElapsed");
+  var timeTotal = document.getElementById("timeTotal");
+  var back10Btn = document.getElementById("back10Btn");
+  var fwd10Btn = document.getElementById("fwd10Btn");
+
+  var EFFECTS = [
+    { id: "muffle",   label: "muffle" },
+    { id: "crush",    label: "distortion" },
+    { id: "bitcrush", label: "bitcrush" },
+    { id: "flanger",  label: "flanger" },
+    { id: "echo",     label: "echo" },
+    { id: "reverb",   label: "reverb" }
+  ];
+
+  function defaultEffectsState() {
+    var obj = {};
+    EFFECTS.forEach(function (fx) { obj[fx.id] = { on: false, amount: 50 }; });
+    return obj;
+  }
+
+  var impulseCache = null;
+  var ctx = null;
+  var masterGain = null;
+  var isPlaying = false;
+  var isReversed = false;
+  var startOffset = 0;
+  var startedAt = 0;
+  var rafId = null;
+
+  var currentSong = SONGS[0];
+  var currentStems = [];
+  var tracks = {};
+
+  /* ===================== song select ===================== */
+
+  SONGS.forEach(function (song) {
+    var opt = document.createElement("option");
+    opt.value = song.id;
+    opt.textContent = song.label;
+    songSelect.appendChild(opt);
+  });
+  songSelect.value = currentSong.id;
+
+  songSelect.addEventListener("change", function () {
+    var song = SONGS.filter(function (s) { return s.id === songSelect.value; })[0];
+    if (song) loadSong(song);
+  });
+
+  loadSong(currentSong);
+
+  playBtn.addEventListener("click", togglePlay);
+  stopBtn.addEventListener("click", stopAll);
+  speedRange.addEventListener("input", onSpeedChange);
+  reverseBtn.addEventListener("click", toggleReverse);
+  back10Btn.addEventListener("click", function () { skip(-10); });
+  fwd10Btn.addEventListener("click", function () { skip(10); });
+  timeline.addEventListener("click", onTimelineClick);
+
+  /* ===================== song loading ===================== */
+
+  function loadSong(song) {
+    stopAll();
+    currentSong = song;
+    channelsEl.innerHTML = "";
+    effectsPanel.innerHTML = "";
+    tracks = {};
+    playBtn.disabled = true;
+    stopBtn.disabled = true;
+    reverseBtn.disabled = true;
+    back10Btn.disabled = true;
+    fwd10Btn.disabled = true;
+
+    if (song.local) {
+      currentStems = [];
+      mixerTitle.textContent = "local mix";
+      mixerSub.textContent = "choose .wav files below to build your own mix";
+      statusLine.textContent = "pick one or more .wav files \u2014 each becomes its own channel.";
+      return;
+    }
+
+    mixerTitle.textContent = song.label.toLowerCase();
+    currentStems = buildStemDefs(song);
+    currentStems.forEach(function (stem) {
+      buildChannelRow(stem);
+      buildEffectRow(stem);
+    });
+    loadAll();
+  }
+
+  /* ===================== channel/fx row builders ===================== */
+
+  function makeTrackState() {
+    return {
+      buffer: null,
+      reversedBuffer: null,
+      source: null,
+      gainNode: null,
+      volume: 0.8,
+      muted: false,
+      solo: false,
+      loaded: false,
+      found: false,
+      effects: defaultEffectsState(),
+      extraNode: null,
+      canvas: null,
+      tag: null,
+      fileLabel: null
+    };
+  }
+
+  function buildChannelRow(stem) {
+    var row = document.createElement("div");
+    row.className = "channel";
+    row.innerHTML =
+      '<div class="channel-info">' +
+        '<div class="channel-name-wrap">' +
+          '<span class="channel-color" style="background:' + stem.color + '"></span>' +
+          '<div>' +
+            '<span class="channel-name">' + stem.name + '</span>' +
+            '<span class="channel-file" data-file="' + stem.id + '">locating&hellip;</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="channel-controls">' +
+          '<button class="mini-btn solo" data-id="' + stem.id + '">s</button>' +
+          '<button class="mini-btn mute" data-id="' + stem.id + '">m</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="waveform-wrap" data-wrap="' + stem.id + '">' +
+        '<canvas data-canvas="' + stem.id + '"></canvas>' +
+        '<div class="playhead" data-playhead="' + stem.id + '"></div>' +
+        '<div class="loading-tag" data-tag="' + stem.id + '">loading</div>' +
+      '</div>' +
+      '<div class="channel-fader">' +
+        '<input type="range" min="0" max="100" value="80" data-id="' + stem.id + '">' +
+        '<span class="val" data-val="' + stem.id + '">80</span>' +
+      '</div>';
+    channelsEl.appendChild(row);
+
+    var t = makeTrackState();
+    t.canvas = row.querySelector('[data-canvas="' + stem.id + '"]');
+    t.tag = row.querySelector('[data-tag="' + stem.id + '"]');
+    t.fileLabel = row.querySelector('[data-file="' + stem.id + '"]');
+    tracks[stem.id] = t;
+
+    row.querySelector(".mini-btn.solo").addEventListener("click", function (e) { toggleSolo(stem.id, e.currentTarget); });
+    row.querySelector(".mini-btn.mute").addEventListener("click", function (e) { toggleMute(stem.id, e.currentTarget); });
+    row.querySelector('.channel-fader input[type="range"]').addEventListener("input", function (e) { onVolumeChange(stem.id, e.currentTarget.value); });
+
+    return row;
+  }
+
+  function buildEffectRow(stem) {
+    var row = document.createElement("div");
+    row.className = "channel effect-row";
+    var itemsHtml = EFFECTS.map(function (fx) {
+      return (
+        '<div class="fx-item">' +
+          '<label class="fx-toggle">' +
+            '<input type="checkbox" data-fx="' + fx.id + '" data-stem="' + stem.id + '">' +
+            '<span>' + fx.label + '</span>' +
+          '</label>' +
+          '<input type="range" class="fx-amount" min="0" max="100" value="50" data-fx-amount="' + fx.id + '" data-stem="' + stem.id + '" disabled>' +
+        '</div>'
+      );
+    }).join("");
+    row.innerHTML =
+      '<div class="channel-info">' +
+        '<div class="channel-name-wrap">' +
+          '<span class="channel-color" style="background:' + stem.color + '"></span>' +
+          '<span class="channel-name">' + stem.name + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="fx-list">' + itemsHtml + '</div>';
+    effectsPanel.appendChild(row);
+
+    row.querySelectorAll('.fx-toggle input[type="checkbox"]').forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var fx = cb.dataset.fx, stemId = cb.dataset.stem;
+        tracks[stemId].effects[fx].on = cb.checked;
+        var slider = row.querySelector('.fx-amount[data-fx-amount="' + fx + '"]');
+        slider.disabled = !cb.checked;
+        rebuildIfPlaying();
+      });
+    });
+    row.querySelectorAll(".fx-amount").forEach(function (sl) {
+      sl.addEventListener("input", function () {
+        var fx = sl.dataset.fxAmount, stemId = sl.dataset.stem;
+        tracks[stemId].effects[fx].amount = parseInt(sl.value, 10);
+        if (tracks[stemId].effects[fx].on) rebuildIfPlaying();
+      });
+    });
+
+    return row;
+  }
+
+  function rebuildIfPlaying() {
+    if (!isPlaying) return;
+    var audioCtx = getCtx();
+    var rate = parseFloat(speedRange.value);
+    startOffset = startOffset + (audioCtx.currentTime - startedAt) * rate;
+    stopSources();
+    playAll();
+  }
+
+  var FX_ORDER = ["muffle", "crush", "bitcrush", "flanger", "echo", "reverb"];
+
+  function buildEffectChain(audioCtx, t) {
+    var chainInput = null, chainOutput = null;
+    var extraNodes = [];
+
+    FX_ORDER.forEach(function (fx) {
+      var state = t.effects[fx];
+      if (!state || !state.on) return;
+      var stage = buildStage(audioCtx, fx, state.amount / 100, extraNodes);
+      if (!chainInput) {
+        chainInput = stage.input;
+        chainOutput = stage.output;
+      } else {
+        chainOutput.connect(stage.input);
+        chainOutput = stage.output;
+      }
+    });
+
+    if (!chainInput) return null;
+    return { input: chainInput, output: chainOutput, extraNodes: extraNodes };
+  }
+
+  function buildStage(audioCtx, fx, intensity, extraNodes) {
+    var input = audioCtx.createGain();
+    var output = audioCtx.createGain();
+    var dry = audioCtx.createGain();
+    dry.gain.value = 1 - intensity;
+    var wet = audioCtx.createGain();
+    wet.gain.value = intensity;
+    input.connect(dry);
+    dry.connect(output);
+
+    var procIn, procOut;
+
+    if (fx === "muffle") {
+      var lp = audioCtx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 8000 - intensity * 7300;
+      procIn = lp; procOut = lp;
+    } else if (fx === "crush") {
+      var shaper = audioCtx.createWaveShaper();
+      var drive = 2 + intensity * 22;
+      var curve = new Float32Array(256);
+      for (var i = 0; i < 256; i++) {
+        var x = (i / 255) * 2 - 1;
+        curve[i] = Math.tanh(x * drive) * 0.9;
+      }
+      shaper.curve = curve;
+      shaper.oversample = "2x";
+      procIn = shaper; procOut = shaper;
+    } else if (fx === "bitcrush") {
+      var crusher = audioCtx.createWaveShaper();
+      var steps = Math.max(2, Math.round(16 - intensity * 14));
+      var bcCurve = new Float32Array(256);
+      for (var k = 0; k < 256; k++) {
+        var xv = (k / 255) * 2 - 1;
+        bcCurve[k] = Math.round(xv * steps) / steps;
+      }
+      crusher.curve = bcCurve;
+      crusher.oversample = "none";
+      procIn = crusher; procOut = crusher;
+    } else if (fx === "flanger") {
+      var fDelay = audioCtx.createDelay();
+      fDelay.delayTime.value = 0.003 + intensity * 0.006;
+      var lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 0.15 + intensity * 0.6;
+      var lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.002 + intensity * 0.004;
+      lfo.connect(lfoGain);
+      lfoGain.connect(fDelay.delayTime);
+      var fFeedback = audioCtx.createGain();
+      fFeedback.gain.value = intensity * 0.5;
+      fDelay.connect(fFeedback);
+      fFeedback.connect(fDelay);
+      lfo.start();
+      extraNodes.push(lfo);
+      procIn = fDelay; procOut = fDelay;
+    } else if (fx === "echo") {
+      var delay = audioCtx.createDelay(1);
+      delay.delayTime.value = 0.18 + intensity * 0.25;
+      var feedback = audioCtx.createGain();
+      feedback.gain.value = 0.2 + intensity * 0.45;
+      delay.connect(feedback);
+      feedback.connect(delay);
+      procIn = delay; procOut = delay;
+    } else if (fx === "reverb") {
+      var convolver = audioCtx.createConvolver();
+      convolver.buffer = getImpulseResponse(audioCtx);
+      procIn = convolver; procOut = convolver;
+    }
+
+    input.connect(procIn);
+    procOut.connect(wet);
+    wet.connect(output);
+
+    return { input: input, output: output };
+  }
+
+  function getImpulseResponse(audioCtx) {
+    if (impulseCache) return impulseCache;
+    var duration = 2.2, decay = 3;
+    var rate = audioCtx.sampleRate;
+    var length = Math.floor(rate * duration);
+    var impulse = audioCtx.createBuffer(2, length, rate);
+    for (var ch = 0; ch < 2; ch++) {
+      var data = impulse.getChannelData(ch);
+      for (var i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+      }
+    }
+    impulseCache = impulse;
+    return impulse;
+  }
+
+  function tabButtons() {
+    return Array.prototype.slice.call(document.querySelectorAll(".tab-btn"));
+  }
+
+  tabButtons().forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      tabButtons().forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      var target = btn.dataset.tab;
+      channelsEl.hidden = target !== "stems";
+      effectsPanel.hidden = target !== "effects";
+    });
+  });
+
+  expandBtn.addEventListener("click", function () {
+    mixerEl.classList.toggle("expanded");
+    expandBtn.textContent = mixerEl.classList.contains("expanded") ? "\u2715" : "\u2922";
+  });
+
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = ctx.createGain();
+      masterGain.gain.value = 1;
+      masterGain.connect(ctx.destination);
+    }
+    return ctx;
+  }
+
+  function findFile(candidates) {
+    var i = 0;
+    return new Promise(function (resolve) {
+      function tryNext() {
+        if (i >= candidates.length) { resolve(null); return; }
+        var name = candidates[i++];
+        fetch(name, { method: "GET", cache: "no-store" })
+          .then(function (res) {
+            if (res.ok) resolve({ name: name, res: res });
+            else tryNext();
+          })
+          .catch(tryNext);
+      }
+      tryNext();
+    });
+  }
+
+  /* ===================== local file picker (kept for local use) ===================== */
+
+  fileInput.addEventListener("change", function () {
+    var files = Array.prototype.slice.call(fileInput.files || []);
+    if (!files.length) return;
+
+    var audioCtx = getCtx();
+    var matched = 0;
+
+    files.forEach(function (file) {
+      var stem;
+
+      if (currentSong.local) {
+        var id = slugify(file.name.replace(/\.wav$/i, ""));
+        stem = currentStems.filter(function (s) { return s.id === id; })[0];
+        if (!stem) {
+          stem = {
+            id: id,
+            name: file.name.replace(/\.wav$/i, ""),
+            color: COLOR_CYCLE[currentStems.length % COLOR_CYCLE.length],
+            candidates: []
+          };
+          currentStems.push(stem);
+          buildChannelRow(stem);
+          buildEffectRow(stem);
+        }
+      } else {
+        stem = matchStem(file.name);
+        if (!stem) return;
+      }
+
+      matched++;
+      var t = tracks[stem.id];
+      t.fileLabel.textContent = file.name;
+      t.found = true;
+
+      file.arrayBuffer()
+        .then(function (data) { return audioCtx.decodeAudioData(data); })
+        .then(function (buffer) {
+          t.buffer = buffer;
+          t.reversedBuffer = reversedCopy(buffer, audioCtx);
+          t.loaded = true;
+          drawWaveform(t, stem.color);
+          t.tag.style.display = "none";
+          afterManualLoad();
+        })
+        .catch(function () {
+          t.tag.textContent = "couldn't decode";
+        });
+    });
+
+    if (matched === 0) {
+      statusLine.textContent = "none of those filenames matched this track's stems.";
+    }
+  });
+
+  function slugify(name) {
+    return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "track";
+  }
+
+  function matchStem(filename) {
+    var clean = filename.toLowerCase();
+    return currentStems.filter(function (s) { return clean.indexOf(s.id) !== -1; })[0] || null;
+  }
+
+  function afterManualLoad() {
+    var loadedCount = currentStems.filter(function (s) { return tracks[s.id].loaded; }).length;
+    if (loadedCount === currentStems.length && loadedCount > 0) {
+      mixerSub.textContent = loadedCount + " stem" + (loadedCount === 1 ? "" : "s") + " loaded and synced";
+      statusLine.textContent = "ready \u2014 hit play to mix.";
+    } else {
+      mixerSub.textContent = loadedCount + " of " + currentStems.length + " stems loaded";
+      statusLine.textContent = "choose the remaining stems, or play with what's loaded.";
+    }
+    playBtn.disabled = false;
+    stopBtn.disabled = false;
+    reverseBtn.disabled = false;
+    back10Btn.disabled = false;
+    fwd10Btn.disabled = false;
+  }
+
+  /* ===================== preset song loading ===================== */
+
+  function loadAll() {
+    var audioCtx = getCtx();
+    var done = 0;
+    var found = 0;
+    var total = currentStems.length;
+    var song = currentSong;
+
+    currentStems.forEach(function (stem) {
+      var t = tracks[stem.id];
+      findFile(stem.candidates)
+        .then(function (hit) {
+          if (song !== currentSong) return null;
+          if (!hit) { t.fileLabel.textContent = "not found"; t.tag.textContent = "missing"; done++; check(); return null; }
+          t.found = true;
+          t.fileLabel.textContent = hit.name;
+          found++;
+          return hit.res.arrayBuffer();
+        })
+        .then(function (data) {
+          if (song !== currentSong) return null;
+          if (!data) return null;
+          return audioCtx.decodeAudioData(data);
+        })
+        .then(function (buffer) {
+          if (song !== currentSong) return;
+          if (!buffer) { done++; check(); return; }
+          t.buffer = buffer;
+          t.reversedBuffer = reversedCopy(buffer, audioCtx);
+          t.loaded = true;
+          drawWaveform(t, stem.color);
+          t.tag.style.display = "none";
+          done++;
+          check();
+        })
+        .catch(function () {
+          if (song !== currentSong) return;
+          t.tag.textContent = "error";
+          done++;
+          check();
+        });
+    });
+
+    function check() {
+      if (song !== currentSong) return;
+      if (done < total) {
+        mixerSub.textContent = "loading stems\u2026 (" + done + "/" + total + ")";
+        statusLine.textContent = "loading\u2026";
+        return;
+      }
+      if (found === total) {
+        mixerSub.textContent = total + " stem" + (total === 1 ? "" : "s") + " loaded and synced";
+        statusLine.textContent = "ready \u2014 hit play to mix.";
+        playBtn.disabled = false;
+        stopBtn.disabled = false;
+        reverseBtn.disabled = false;
+        back10Btn.disabled = false;
+        fwd10Btn.disabled = false;
+      } else if (found === 0) {
+        mixerSub.textContent = "no stems found automatically";
+        statusLine.textContent = "add files under /stems/" + song.folder + "/, or choose .wav files below.";
+      } else {
+        mixerSub.textContent = found + " of " + total + " stems found";
+        statusLine.textContent = "some stems are missing \u2014 add them to /stems/" + song.folder + "/, or choose them below.";
+        playBtn.disabled = false;
+        stopBtn.disabled = false;
+        reverseBtn.disabled = false;
+        back10Btn.disabled = false;
+        fwd10Btn.disabled = false;
+      }
+    }
+  }
+
+  function reversedCopy(buffer, audioCtx) {
+    var rev = audioCtx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    for (var ch = 0; ch < buffer.numberOfChannels; ch++) {
+      var src = buffer.getChannelData(ch);
+      var dst = rev.getChannelData(ch);
+      for (var i = 0, n = src.length; i < n; i++) {
+        dst[i] = src[n - 1 - i];
+      }
+    }
+    return rev;
+  }
+
+  function drawWaveform(t, colorVar) {
+    var canvas = t.canvas;
+    var wrap = canvas.parentElement;
+    var dpr = window.devicePixelRatio || 1;
+    var w = wrap.clientWidth || 300;
+    var h = wrap.clientHeight || 44;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    var g = canvas.getContext("2d");
+    g.scale(dpr, dpr);
+
+    var data = t.buffer.getChannelData(0);
+    var buckets = Math.max(60, Math.floor(w));
+    var step = Math.floor(data.length / buckets) || 1;
+    var mid = h / 2;
+    var color = getComputedStyle(document.documentElement).getPropertyValue(colorVar.replace("var(", "").replace(")", "")).trim();
+
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = color || "#000";
+    for (var i = 0; i < buckets; i++) {
+      var start = i * step;
+      var min = 1.0, max = -1.0;
+      for (var j = 0; j < step; j++) {
+        var v = data[start + j] || 0;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      var barH = Math.max(1, (max - min) * mid);
+      var y = mid - (max * mid);
+      g.globalAlpha = 0.85;
+      g.fillRect(i * (w / buckets), y, Math.max(1, w / buckets - 0.5), barH);
+    }
+  }
+
+  /* ===================== transport ===================== */
+
+  function togglePlay() {
+    if (isPlaying) pauseAll(); else playAll();
+  }
+
+  function playAll() {
+    var audioCtx = getCtx();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+
+    var anyLoaded = currentStems.some(function (s) { return tracks[s.id] && tracks[s.id].loaded; });
+    if (!anyLoaded) {
+      statusLine.textContent = "no stems loaded yet.";
+      return;
+    }
+
+    var rate = parseFloat(speedRange.value);
+
+    currentStems.forEach(function (stem) {
+      var t = tracks[stem.id];
+      if (!t || !t.loaded) return;
+
+      var buf = isReversed ? t.reversedBuffer : t.buffer;
+      var src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.playbackRate.value = rate;
+
+      var gain = audioCtx.createGain();
+      gain.gain.value = effectiveGain(t);
+
+      var chain = buildEffectChain(audioCtx, t);
+      if (chain) {
+        src.connect(chain.input);
+        chain.output.connect(gain);
+        t.extraNode = chain.extraNodes;
+      } else {
+        src.connect(gain);
+        t.extraNode = null;
+      }
+      gain.connect(masterGain);
+
+      var offset = startOffset % buf.duration;
+      src.start(0, offset);
+
+      t.source = src;
+      t.gainNode = gain;
+    });
+
+    startedAt = audioCtx.currentTime;
+    isPlaying = true;
+    playBtn.textContent = "\u275A\u275A";
+    record.classList.add("spinning");
+    tickPlayhead();
+  }
+
+  function pauseAll() {
+    if (!isPlaying) return;
+    var audioCtx = getCtx();
+    var rate = parseFloat(speedRange.value);
+    startOffset = startOffset + (audioCtx.currentTime - startedAt) * rate;
+    stopSources();
+    isPlaying = false;
+    playBtn.textContent = "\u25B6";
+    record.classList.remove("spinning");
+    if (rafId) cancelAnimationFrame(rafId);
+  }
+
+  function stopAll() {
+    stopSources();
+    isPlaying = false;
+    startOffset = 0;
+    playBtn.textContent = "\u25B6";
+    record.classList.remove("spinning");
+    if (rafId) cancelAnimationFrame(rafId);
+    tonearm.style.setProperty("--tonearm-angle", "-28deg");
+    currentStems.forEach(function (stem) {
+      var ph = document.querySelector('[data-playhead="' + stem.id + '"]');
+      if (ph) ph.style.left = "0%";
+    });
+    timelineFill.style.width = "0%";
+    timeElapsed.textContent = "0:00";
+    timeTotal.textContent = formatTime(getReferenceDuration());
+  }
+
+  function stopSources() {
+    currentStems.forEach(function (stem) {
+      var t = tracks[stem.id];
+      if (!t) return;
+      if (t.source) {
+        try { t.source.stop(); } catch (e) {}
+        t.source.disconnect();
+        t.source = null;
+      }
+      if (t.gainNode) { t.gainNode.disconnect(); t.gainNode = null; }
+      if (t.extraNode) {
+        t.extraNode.forEach(function (n) {
+          try { n.stop(); } catch (e) {}
+          try { n.disconnect(); } catch (e) {}
+        });
+        t.extraNode = null;
+      }
+    });
+  }
+
+  function tickPlayhead() {
+    if (!isPlaying) return;
+    var audioCtx = getCtx();
+    var rate = parseFloat(speedRange.value);
+    var elapsed = startOffset + (audioCtx.currentTime - startedAt) * rate;
+    var overallProgress = 0;
+    var haveDuration = false;
+
+    currentStems.forEach(function (stem) {
+      var t = tracks[stem.id];
+      if (!t || !t.loaded) return;
+      var buf = isReversed ? t.reversedBuffer : t.buffer;
+      var pct = (elapsed % buf.duration) / buf.duration;
+      var ph = document.querySelector('[data-playhead="' + stem.id + '"]');
+      if (ph) ph.style.left = (pct * 100) + "%";
+      if (!haveDuration) { overallProgress = pct; haveDuration = true; }
+    });
+
+    var startAngle = -28, endAngle = 4;
+    var angle = startAngle + (endAngle - startAngle) * overallProgress;
+    tonearm.style.setProperty("--tonearm-angle", angle + "deg");
+
+    updateTimelineUI(overallProgress);
+
+    rafId = requestAnimationFrame(tickPlayhead);
+  }
+
+  function updateTimelineUI(progress) {
+    var duration = getReferenceDuration();
+    timelineFill.style.width = (progress * 100) + "%";
+    timeElapsed.textContent = formatTime(progress * duration);
+    timeTotal.textContent = formatTime(duration);
+  }
+
+  function formatTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) seconds = 0;
+    var m = Math.floor(seconds / 60);
+    var s = Math.floor(seconds % 60);
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function getReferenceDuration() {
+    for (var i = 0; i < currentStems.length; i++) {
+      var t = tracks[currentStems[i].id];
+      if (t && t.loaded) return isReversed ? t.reversedBuffer.duration : t.buffer.duration;
+    }
+    return 0;
+  }
+
+  function skip(seconds) {
+    var duration = getReferenceDuration();
+    if (!duration) return;
+    var audioCtx = getCtx();
+    var rate = parseFloat(speedRange.value);
+    var elapsed = isPlaying ? startOffset + (audioCtx.currentTime - startedAt) * rate : startOffset;
+    var newElapsed = elapsed + seconds;
+    if (newElapsed < 0) newElapsed = 0;
+    seekTo(newElapsed);
+  }
+
+  function seekTo(offsetSeconds) {
+    startOffset = offsetSeconds;
+    if (isPlaying) {
+      stopSources();
+      playAll();
+    } else {
+      var duration = getReferenceDuration();
+      var progress = duration ? (offsetSeconds % duration) / duration : 0;
+      updateTimelineUI(progress);
+    }
+  }
+
+  function onTimelineClick(e) {
+    var duration = getReferenceDuration();
+    if (!duration) return;
+    var rect = timeline.getBoundingClientRect();
+    var ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    seekTo(ratio * duration);
+  }
+
+  function onSpeedChange() {
+    var rate = parseFloat(speedRange.value);
+    speedVal.textContent = rate.toFixed(2) + "x";
+    if (isPlaying) {
+      var audioCtx = getCtx();
+      var prevRate = parseFloat(speedRange.dataset.prevRate || rate);
+      startOffset = startOffset + (audioCtx.currentTime - startedAt) * prevRate;
+      startedAt = audioCtx.currentTime;
+      currentStems.forEach(function (stem) {
+        var t = tracks[stem.id];
+        if (t && t.source) t.source.playbackRate.value = rate;
+      });
+    }
+    speedRange.dataset.prevRate = rate;
+  }
+
+  function toggleReverse() {
+    isReversed = !isReversed;
+    reverseBtn.classList.toggle("active", isReversed);
+    reverseBtn.textContent = isReversed ? "reverse \u2713" : "reverse";
+    if (isPlaying) {
+      var audioCtx = getCtx();
+      var rate = parseFloat(speedRange.value);
+      startOffset = startOffset + (audioCtx.currentTime - startedAt) * rate;
+      stopSources();
+      playAll();
+    }
+  }
+
+  function toggleSolo(id, btn) {
+    var t = tracks[id];
+    t.solo = !t.solo;
+    btn.classList.toggle("active", t.solo);
+    refreshGains();
+  }
+
+  function toggleMute(id, btn) {
+    var t = tracks[id];
+    t.muted = !t.muted;
+    btn.classList.toggle("active", t.muted);
+    refreshGains();
+  }
+
+  function onVolumeChange(id, value) {
+    var t = tracks[id];
+    t.volume = value / 100;
+    document.querySelector('.val[data-val="' + id + '"]').textContent = value;
+    if (t.gainNode) t.gainNode.gain.value = effectiveGain(t);
+  }
+
+  function effectiveGain(t) {
+    var anySolo = currentStems.some(function (s) { return tracks[s.id] && tracks[s.id].solo; });
+    if (t.muted) return 0;
+    if (anySolo && !t.solo) return 0;
+    return t.volume;
+  }
+
+  function refreshGains() {
+    currentStems.forEach(function (stem) {
+      var t = tracks[stem.id];
+      if (t && t.gainNode) t.gainNode.gain.value = effectiveGain(t);
+    });
+  }
+})();
+</script>
+</body>
+</html>
